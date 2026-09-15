@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* -------------------------------------------------------------------------- */
+/* CHẾ ĐỘ IN ẤN XUẤT PDF CHUẨN NGHỊ ĐỊNH 30/2020/NĐ-CP                        */
+/* -------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 20mm 20mm 20mm 30mm; /* Lề NĐ 30: Trên 2cm, Phải 2cm, Dưới 2cm, Trái 3cm */
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+}

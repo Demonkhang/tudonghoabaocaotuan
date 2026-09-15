@@ -1,0 +1,6 @@
+{
+  "name": "Hệ thống tạo báo cáo tuần tự động",
+  "description": "Nền tảng quản lý hiệu suất công việc chính phủ, tự động hóa tổng hợp và xuất báo cáo tuần chuẩn thể thức hành chính.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
