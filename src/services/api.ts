@@ -21,6 +21,144 @@ export async function fetchSyncedData() {
   }
 }
 
+export async function fetchReportDetail(departmentId: string, week: number, year: number, reportId?: string, accountId?: string) {
+  try {
+    let url = reportId
+      ? `/api/reports/detail?report_id=${reportId}`
+      : `/api/reports/detail?department_id=${departmentId}&week=${week}&year=${year}`;
+
+    if (accountId) {
+      url += `&account_id=${accountId}`;
+    }
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || 'Không thể tải chi tiết báo cáo');
+    }
+    return await res.json();
+  } catch (err: any) {
+    console.warn('Fallback fetchReportDetail:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchReportHistory(departmentId?: string, accountId?: string) {
+  try {
+    let url = '/api/reports/history?';
+    if (departmentId) url += `department_id=${departmentId}&`;
+    if (accountId) url += `account_id=${accountId}`;
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Không thể tải lịch sử báo cáo');
+    return await res.json();
+  } catch (err: any) {
+    console.warn('Lỗi fetchReportHistory:', err);
+    return { success: false, reports: [] };
+  }
+}
+
+export async function saveReportData(payload: any, accountId?: string) {
+  try {
+    const body = {
+      ...payload,
+      account_id: accountId || payload.metadata?.account_id
+    };
+
+    const res = await fetch('/api/reports/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || 'Lỗi khi lưu báo cáo');
+    }
+    return result;
+  } catch (err: any) {
+    console.error('Lỗi khi lưu báo cáo:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function shareReportApi(reportId: string, sharedWithAccountId: string, permission: 'VIEW' | 'EDIT', senderAccountId: string) {
+  try {
+    const res = await fetch('/api/reports/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        report_id: reportId,
+        shared_with_account_id: sharedWithAccountId,
+        permission,
+        sender_account_id: senderAccountId
+      })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchReportShares(reportId: string) {
+  try {
+    const res = await fetch(`/api/reports/shares?report_id=${reportId}`);
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, shares: [] };
+  }
+}
+
+export async function revokeReportShareApi(shareId: string) {
+  try {
+    const res = await fetch(`/api/reports/shares/${shareId}`, { method: 'DELETE' });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchNotifications(accountId: string) {
+  try {
+    const res = await fetch(`/api/notifications?account_id=${accountId}`);
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, notifications: [], unread_count: 0 };
+  }
+}
+
+export async function markNotificationReadApi(notificationId?: string, accountId?: string, markAll = false) {
+  try {
+    const res = await fetch('/api/notifications/mark-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notification_id: notificationId, account_id: accountId, mark_all: markAll })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false };
+  }
+}
+
+export async function triggerCarryOver(departmentId: string, currentWeek: number, currentYear: number, accountId: string) {
+  try {
+    const res = await fetch('/api/reports/carry-over', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        department_id: departmentId,
+        current_week: currentWeek,
+        current_year: currentYear,
+        account_id: accountId
+      })
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi triggerCarryOver:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function exportWordReport(payload: any) {
   try {
     const res = await fetch('/api/generate-word', {
@@ -129,18 +267,27 @@ function isIgnoredRow(text: string): boolean {
     return true;
   }
 
+  // Exact document title lines
+  if (
+    lower === 'báo cáo' ||
+    lower === 'báo cáo kết quả' ||
+    lower.startsWith('báo cáo kết quả thực hiện nhiệm vụ') ||
+    lower.startsWith('báo cáo tình hình thực hiện nhiệm vụ')
+  ) {
+    return true;
+  }
+
+  // Administrative headers
   if (
     lower.includes('cộng hòa xã hội') ||
     lower.includes('độc lập - tự do') ||
     lower.includes('độc lập – tự do') ||
-    lower.includes('ubnd thành phố') ||
-    lower.includes('ủy ban nhân dân') ||
+    (lower.includes('ubnd thành phố') && lower.length < 40 && !lower.includes('triển khai') && !lower.includes('báo cáo') && !lower.includes('thực hiện') && !lower.includes('nhiệm vụ')) ||
+    (lower.includes('ủy ban nhân dân') && lower.length < 45 && !lower.includes('triển khai') && !lower.includes('báo cáo') && !lower.includes('thực hiện') && !lower.includes('nhiệm vụ')) ||
     lower.includes('ban quản lý các khu') ||
     lower.includes('văn phòng hđnd') ||
-    (lower.includes('văn phòng') && lower.length < 35) ||
-    lower.includes('thành phố hồ chí minh') ||
-    lower.includes('báo cáo kết quả') ||
-    (lower.startsWith('báo cáo') && lower.length < 45) ||
+    (lower.includes('văn phòng') && lower.length < 35 && !lower.includes('nhiệm vụ') && !lower.includes('công tác') && !lower.includes('hồ sơ') && !lower.includes('tài liệu')) ||
+    (lower.startsWith('thành phố hồ chí minh') && lower.length < 50 && (lower.includes('ngày') || lower.includes('tháng')) && !lower.includes('quy chế') && !lower.includes('nhiệm vụ') && !lower.includes('báo cáo') && !lower.includes('kế hoạch')) ||
     lower.includes('kính gửi:') ||
     lower.includes('phương hướng thực hiện') ||
     lower.includes('nơi nhận:') ||
@@ -154,25 +301,28 @@ function isIgnoredRow(text: string): boolean {
     return true;
   }
 
+  // Column Headers
   if (
-    lower.includes('nội dung nhiệm vụ') ||
+    lower.includes('nội dung nhiệm vụ/ công tác') ||
     lower.includes('thời gian được giao') ||
     lower.includes('triển khai thực hiện') ||
     lower.includes('tiến độ thực hiện') ||
-    lower.includes('nhiệm vụ/công tác') ||
+    (lower.includes('nhiệm vụ/công tác') && lower.length < 30) ||
     lower.includes('thời gian dự kiến') ||
     lower.includes('sản phẩm dự kiến')
   ) {
     return true;
   }
 
+  // Section Subheaders
   if (
-    lower.includes('nhiệm vụ thường xuyên') ||
+    lower.includes('nhiệm vụ thường xuyên (') ||
+    lower === 'nhiệm vụ thường xuyên' ||
     lower.includes('nhiệm vụ theo bút phê') ||
-    lower.includes('chỉ đạo đột xuất') ||
-    lower.includes('kế hoạch thực hiện công tác') ||
-    lower.includes('kết quả thực hiện công tác') ||
-    lower.includes('khó khăn, vướng mắc')
+    lower.includes('chỉ đạo đột xuất (') ||
+    lower.includes('kế hoạch thực hiện công tác tuần') ||
+    lower.includes('kết quả thực hiện công tác tuần') ||
+    lower.includes('khó khăn, vướng mắc, đề xuất')
   ) {
     return true;
   }
@@ -429,11 +579,10 @@ function createDocxZipTemplate() {
       </w:tr>
 
       <!-- DATA LOOP NHÓM I -->
-      {#thuongxuyen_ketqua}
       <w:tr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{stt}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{#thuongxuyen_ketqua}{stt}</w:t></w:r></w:p>
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3200" w:type="dxa"/></w:tcPr>
@@ -449,10 +598,9 @@ function createDocxZipTemplate() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{tien_do}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{tien_do}{/thuongxuyen_ketqua}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-      {/thuongxuyen_ketqua}
 
       <!-- SUBHEADER NHÓM II -->
       <w:tr>
@@ -467,11 +615,10 @@ function createDocxZipTemplate() {
       </w:tr>
 
       <!-- DATA LOOP NHÓM II -->
-      {#dotxuat_ketqua}
       <w:tr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{stt}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{#dotxuat_ketqua}{stt}</w:t></w:r></w:p>
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3200" w:type="dxa"/></w:tcPr>
@@ -487,10 +634,9 @@ function createDocxZipTemplate() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{tien_do}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{tien_do}{/dotxuat_ketqua}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-      {/dotxuat_ketqua}
     </w:tbl>
 
     <!-- CHÚ THÍCH BẢNG I -->
@@ -562,11 +708,10 @@ function createDocxZipTemplate() {
       </w:tr>
 
       <!-- DATA LOOP NHÓM I -->
-      {#thuongxuyen_kehoach}
       <w:tr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{stt}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{#thuongxuyen_kehoach}{stt}</w:t></w:r></w:p>
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3800" w:type="dxa"/></w:tcPr>
@@ -578,10 +723,9 @@ function createDocxZipTemplate() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3300" w:type="dxa"/></w:tcPr>
-          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{san_pham_du_kien}</w:t></w:r></w:p>
+          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{san_pham_du_kien}{/thuongxuyen_kehoach}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-      {/thuongxuyen_kehoach}
 
       <!-- SUBHEADER NHÓM II -->
       <w:tr>
@@ -596,11 +740,10 @@ function createDocxZipTemplate() {
       </w:tr>
 
       <!-- DATA LOOP NHÓM II -->
-      {#dotxuat_kehoach}
       <w:tr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{stt}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{#dotxuat_kehoach}{stt}</w:t></w:r></w:p>
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3800" w:type="dxa"/></w:tcPr>
@@ -612,10 +755,9 @@ function createDocxZipTemplate() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3300" w:type="dxa"/></w:tcPr>
-          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{san_pham_du_kien}</w:t></w:r></w:p>
+          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{san_pham_du_kien}{/dotxuat_kehoach}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-      {/dotxuat_kehoach}
     </w:tbl>
 
     <!-- CHÚ THÍCH BẢNG II -->
@@ -816,3 +958,68 @@ function getFallbackData() {
     ]
   };
 }
+
+export async function fetchAdminAccounts() {
+  try {
+    const res = await fetch('/api/admin/accounts');
+    if (!res.ok) throw new Error('Không thể tải danh sách tài khoản');
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi fetchAdminAccounts:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function createAdminAccount(accountData: any) {
+  try {
+    const res = await fetch('/api/admin/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(accountData)
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi createAdminAccount:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteAdminAccount(id: string) {
+  try {
+    const res = await fetch(`/api/admin/accounts/${id}`, {
+      method: 'DELETE'
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi deleteAdminAccount:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function createAdminDepartment(deptData: any) {
+  try {
+    const res = await fetch('/api/admin/departments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deptData)
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi createAdminDepartment:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchCandidateTasks(departmentId: string, accountId?: string) {
+  try {
+    let url = `/api/reports/candidate-tasks?department_id=${encodeURIComponent(departmentId)}`;
+    if (accountId) url += `&account_id=${encodeURIComponent(accountId)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Không thể lấy danh sách kho nhiệm vụ');
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi fetchCandidateTasks:', err);
+    return { success: false, tasks: [] };
+  }
+}
+

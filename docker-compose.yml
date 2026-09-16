@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  weekly_report_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: weekly_report_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_PATH=/app/server/data/weekly_report.db
+    volumes:
+      - ./server/data:/app/server/data
+      - ./server/templates:/app/server/templates
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

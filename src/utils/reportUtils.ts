@@ -59,26 +59,34 @@ export function classifyTask(noiDung: string): 'Thường xuyên' | 'Đột xu�
  */
 export function isIgnoredRow(text: string): boolean {
   if (!text) return true;
-  const lower = text.toLowerCase().trim();
+  const lower = String(text).toLowerCase().trim();
+  if (!lower) return true;
 
-  // Đơn thuần là số thứ tự hoặc ký tự La Mã cô lập
   if (/^\d+$/.test(lower) || lower === 'i' || lower === 'ii' || lower === 'iii' || lower === 'iv' || lower === 'stt') {
     return true;
   }
 
-  // Tiêu đề Quốc hiệu, Cơ quan, Báo cáo, Kính gửi, Chữ ký
+  // Exact document title lines
+  if (
+    lower === 'báo cáo' ||
+    lower === 'báo cáo kết quả' ||
+    lower.startsWith('báo cáo kết quả thực hiện nhiệm vụ') ||
+    lower.startsWith('báo cáo tình hình thực hiện nhiệm vụ')
+  ) {
+    return true;
+  }
+
+  // Administrative headers
   if (
     lower.includes('cộng hòa xã hội') ||
     lower.includes('độc lập - tự do') ||
     lower.includes('độc lập – tự do') ||
-    lower.includes('ubnd thành phố') ||
-    lower.includes('ủy ban nhân dân') ||
+    (lower.includes('ubnd thành phố') && lower.length < 40 && !lower.includes('triển khai') && !lower.includes('báo cáo') && !lower.includes('thực hiện') && !lower.includes('nhiệm vụ')) ||
+    (lower.includes('ủy ban nhân dân') && lower.length < 45 && !lower.includes('triển khai') && !lower.includes('báo cáo') && !lower.includes('thực hiện') && !lower.includes('nhiệm vụ')) ||
     lower.includes('ban quản lý các khu') ||
     lower.includes('văn phòng hđnd') ||
-    (lower.includes('văn phòng') && lower.length < 35) ||
-    lower.includes('thành phố hồ chí minh') ||
-    lower.includes('báo cáo kết quả') ||
-    (lower.startsWith('báo cáo') && lower.length < 45) ||
+    (lower.includes('văn phòng') && lower.length < 35 && !lower.includes('nhiệm vụ') && !lower.includes('công tác') && !lower.includes('hồ sơ') && !lower.includes('tài liệu')) ||
+    (lower.startsWith('thành phố hồ chí minh') && lower.length < 50 && (lower.includes('ngày') || lower.includes('tháng')) && !lower.includes('quy chế') && !lower.includes('nhiệm vụ') && !lower.includes('báo cáo') && !lower.includes('kế hoạch')) ||
     lower.includes('kính gửi:') ||
     lower.includes('phương hướng thực hiện') ||
     lower.includes('nơi nhận:') ||
@@ -92,27 +100,28 @@ export function isIgnoredRow(text: string): boolean {
     return true;
   }
 
-  // Header cột bảng
+  // Column Headers
   if (
-    lower.includes('nội dung nhiệm vụ') ||
+    lower.includes('nội dung nhiệm vụ/ công tác') ||
     lower.includes('thời gian được giao') ||
     lower.includes('triển khai thực hiện') ||
     lower.includes('tiến độ thực hiện') ||
-    lower.includes('nhiệm vụ/công tác') ||
+    (lower.includes('nhiệm vụ/công tác') && lower.length < 30) ||
     lower.includes('thời gian dự kiến') ||
     lower.includes('sản phẩm dự kiến')
   ) {
     return true;
   }
 
-  // Subheader nhóm
+  // Section Subheaders
   if (
-    lower.includes('nhiệm vụ thường xuyên') ||
+    lower.includes('nhiệm vụ thường xuyên (') ||
+    lower === 'nhiệm vụ thường xuyên' ||
     lower.includes('nhiệm vụ theo bút phê') ||
-    lower.includes('chỉ đạo đột xuất') ||
-    lower.includes('kế hoạch thực hiện công tác') ||
-    lower.includes('kết quả thực hiện công tác') ||
-    lower.includes('khó khăn, vướng mắc')
+    lower.includes('chỉ đạo đột xuất (') ||
+    lower.includes('kế hoạch thực hiện công tác tuần') ||
+    lower.includes('kết quả thực hiện công tác tuần') ||
+    lower.includes('khó khăn, vướng mắc, đề xuất')
   ) {
     return true;
   }

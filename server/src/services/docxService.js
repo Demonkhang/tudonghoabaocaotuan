@@ -1,13 +1,17 @@
-const Docxtemplater = require('docxtemplater');
-const PizZip = require('pizzip');
-const fs = require('fs');
-const path = require('path');
+import Docxtemplater from 'docxtemplater';
+import PizZip from 'pizzip';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Xử lý tạo file Word .docx từ dữ liệu báo cáo tuần
  * Tuân thủ quy tắc BR01 - BR15 & Thể thức văn bản hành chính Việt Nam (Nghị định 30/2020/NĐ-CP)
  */
-function createDocxReport(data) {
+export function createDocxReport(data) {
   const templatePath = path.join(__dirname, '../../templates/report_template.docx');
 
   let zip;
@@ -51,7 +55,7 @@ function createDocxReport(data) {
 /**
  * Định dạng Ngày lập báo cáo chuẩn thể thức
  */
-function formatNgayLap(rawDate) {
+export function formatNgayLap(rawDate) {
   if (!rawDate || !String(rawDate).trim()) {
     const now = new Date();
     return `Thành phố Hồ Chí Minh, ngày ${now.getDate()} tháng ${now.getMonth() + 1} năm ${now.getFullYear()}`;
@@ -91,7 +95,7 @@ function formatNgayLap(rawDate) {
 /**
  * Lọc bỏ các dòng tiêu đề / subheader thừa từ file Excel
  */
-function isIgnoredRow(text) {
+export function isIgnoredRow(text) {
   if (!text) return true;
   const lower = String(text).toLowerCase().trim();
   if (!lower) return true;
@@ -100,18 +104,27 @@ function isIgnoredRow(text) {
     return true;
   }
 
+  // Exact document title lines
+  if (
+    lower === 'báo cáo' ||
+    lower === 'báo cáo kết quả' ||
+    lower.startsWith('báo cáo kết quả thực hiện nhiệm vụ') ||
+    lower.startsWith('báo cáo tình hình thực hiện nhiệm vụ')
+  ) {
+    return true;
+  }
+
+  // Administrative headers
   if (
     lower.includes('cộng hòa xã hội') ||
     lower.includes('độc lập - tự do') ||
     lower.includes('độc lập – tự do') ||
-    lower.includes('ubnd thành phố') ||
-    lower.includes('ủy ban nhân dân') ||
+    (lower.includes('ubnd thành phố') && lower.length < 40 && !lower.includes('triển khai') && !lower.includes('báo cáo') && !lower.includes('thực hiện') && !lower.includes('nhiệm vụ')) ||
+    (lower.includes('ủy ban nhân dân') && lower.length < 45 && !lower.includes('triển khai') && !lower.includes('báo cáo') && !lower.includes('thực hiện') && !lower.includes('nhiệm vụ')) ||
     lower.includes('ban quản lý các khu') ||
     lower.includes('văn phòng hđnd') ||
-    (lower.includes('văn phòng') && lower.length < 35) ||
-    lower.includes('thành phố hồ chí minh') ||
-    lower.includes('báo cáo kết quả') ||
-    (lower.startsWith('báo cáo') && lower.length < 45) ||
+    (lower.includes('văn phòng') && lower.length < 35 && !lower.includes('nhiệm vụ') && !lower.includes('công tác') && !lower.includes('hồ sơ') && !lower.includes('tài liệu')) ||
+    (lower.startsWith('thành phố hồ chí minh') && lower.length < 50 && (lower.includes('ngày') || lower.includes('tháng')) && !lower.includes('quy chế') && !lower.includes('nhiệm vụ') && !lower.includes('báo cáo') && !lower.includes('kế hoạch')) ||
     lower.includes('kính gửi:') ||
     lower.includes('phương hướng thực hiện') ||
     lower.includes('nơi nhận:') ||
@@ -125,25 +138,28 @@ function isIgnoredRow(text) {
     return true;
   }
 
+  // Column Headers
   if (
-    lower.includes('nội dung nhiệm vụ') ||
+    lower.includes('nội dung nhiệm vụ/ công tác') ||
     lower.includes('thời gian được giao') ||
     lower.includes('triển khai thực hiện') ||
     lower.includes('tiến độ thực hiện') ||
-    lower.includes('nhiệm vụ/công tác') ||
+    (lower.includes('nhiệm vụ/công tác') && lower.length < 30) ||
     lower.includes('thời gian dự kiến') ||
     lower.includes('sản phẩm dự kiến')
   ) {
     return true;
   }
 
+  // Section Subheaders
   if (
-    lower.includes('nhiệm vụ thường xuyên') ||
+    lower.includes('nhiệm vụ thường xuyên (') ||
+    lower === 'nhiệm vụ thường xuyên' ||
     lower.includes('nhiệm vụ theo bút phê') ||
-    lower.includes('chỉ đạo đột xuất') ||
-    lower.includes('kế hoạch thực hiện công tác') ||
-    lower.includes('kết quả thực hiện công tác') ||
-    lower.includes('khó khăn, vướng mắc')
+    lower.includes('chỉ đạo đột xuất (') ||
+    lower.includes('kế hoạch thực hiện công tác tuần') ||
+    lower.includes('kết quả thực hiện công tác tuần') ||
+    lower.includes('khó khăn, vướng mắc, đề xuất')
   ) {
     return true;
   }
@@ -151,7 +167,7 @@ function isIgnoredRow(text) {
   return false;
 }
 
-function classifyTask(noiDung) {
+export function classifyTask(noiDung) {
   if (!noiDung) return 'Thường xuyên';
   const lower = String(noiDung).toLowerCase();
   const keywords = [
@@ -167,7 +183,7 @@ function classifyTask(noiDung) {
 /**
  * Chuẩn hóa dữ liệu theo đúng danh sách thẻ Placeholder trong README_TEMPLATES.md
  */
-function formatDataForTemplate(data) {
+export function formatDataForTemplate(data) {
   const metadata = data.metadata || {};
 
   // Lọc sạch Bảng I
@@ -268,7 +284,7 @@ function formatDataForTemplate(data) {
 /**
  * Khởi tạo file Word Zip chuẩn thể thức Nghị định 30/2020/NĐ-CP & Đầy đủ Bảng biểu
  */
-function createMinimalDocxZip() {
+export function createMinimalDocxZip() {
   const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <w:body>
@@ -406,13 +422,10 @@ function createMinimalDocxZip() {
           <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:i/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>Nhiệm vụ thường xuyên ({thuongxuyen_hoanthanh} Nhiệm vụ hoàn thành/tổng số nhiệm vụ được giao trong tuần)</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-
-      <!-- DATA LOOP NHÓM I -->
-      {#thuongxuyen_ketqua}
       <w:tr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{stt}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{#thuongxuyen_ketqua}{stt}</w:t></w:r></w:p>
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3200" w:type="dxa"/></w:tcPr>
@@ -428,10 +441,9 @@ function createMinimalDocxZip() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{tien_do}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{tien_do}{/thuongxuyen_ketqua}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-      {/thuongxuyen_ketqua}
 
       <!-- SUBHEADER NHÓM II -->
       <w:tr>
@@ -446,11 +458,10 @@ function createMinimalDocxZip() {
       </w:tr>
 
       <!-- DATA LOOP NHÓM II -->
-      {#dotxuat_ketqua}
       <w:tr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{stt}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{#dotxuat_ketqua}{stt}</w:t></w:r></w:p>
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3200" w:type="dxa"/></w:tcPr>
@@ -466,10 +477,9 @@ function createMinimalDocxZip() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{tien_do}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{tien_do}{/dotxuat_ketqua}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-      {/dotxuat_ketqua}
     </w:tbl>
 
     <!-- CHÚ THÍCH BẢNG I -->
@@ -541,11 +551,10 @@ function createMinimalDocxZip() {
       </w:tr>
 
       <!-- DATA LOOP NHÓM I -->
-      {#thuongxuyen_kehoach}
       <w:tr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{stt}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{#thuongxuyen_kehoach}{stt}</w:t></w:r></w:p>
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3800" w:type="dxa"/></w:tcPr>
@@ -557,10 +566,9 @@ function createMinimalDocxZip() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3300" w:type="dxa"/></w:tcPr>
-          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{san_pham_du_kien}</w:t></w:r></w:p>
+          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{san_pham_du_kien}{/thuongxuyen_kehoach}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-      {/thuongxuyen_kehoach}
 
       <!-- SUBHEADER NHÓM II -->
       <w:tr>
@@ -575,11 +583,10 @@ function createMinimalDocxZip() {
       </w:tr>
 
       <!-- DATA LOOP NHÓM II -->
-      {#dotxuat_kehoach}
       <w:tr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{stt}</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{#dotxuat_kehoach}{stt}</w:t></w:r></w:p>
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3800" w:type="dxa"/></w:tcPr>
@@ -591,10 +598,9 @@ function createMinimalDocxZip() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="3300" w:type="dxa"/></w:tcPr>
-          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{san_pham_du_kien}</w:t></w:r></w:p>
+          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>{san_pham_du_kien}{/dotxuat_kehoach}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
-      {/dotxuat_kehoach}
     </w:tbl>
 
     <!-- CHÚ THÍCH BẢNG II -->
@@ -677,9 +683,3 @@ function createMinimalDocxZip() {
 
   return zip;
 }
-
-module.exports = {
-  createDocxReport,
-  createMinimalDocxZip,
-  formatDataForTemplate
-};

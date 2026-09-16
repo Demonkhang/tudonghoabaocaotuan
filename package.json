@@ -7,7 +7,7 @@
     "rollup": "npm:@rollup/wasm-node@^4.34.8"
   },
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "tsx watch server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "dev:monorepo": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",

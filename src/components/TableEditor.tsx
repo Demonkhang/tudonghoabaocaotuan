@@ -11,6 +11,7 @@ interface TableEditorProps {
   tuan: number;
   tuanTiep: number;
   nam: number;
+  isReadOnly?: boolean;
 }
 
 export const TableEditor: React.FC<TableEditorProps> = ({
@@ -21,7 +22,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
   highlightedRowId,
   tuan,
   tuanTiep,
-  nam
+  nam,
+  isReadOnly = false
 }) => {
   const p1 = processTable1(table1);
   const p2 = processTable2(table2);
