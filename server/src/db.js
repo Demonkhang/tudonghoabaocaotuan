@@ -39,6 +39,8 @@ function initDatabase() {
       password TEXT NOT NULL,
       full_name TEXT NOT NULL,
       role TEXT CHECK(role IN ('ADMIN', 'LEADER', 'STAFF')) DEFAULT 'STAFF',
+      position_level TEXT CHECK(position_level IN ('GIAM_DOC', 'PHO_GIAM_DOC', 'TRUONG_PHONG', 'PHO_PHONG', 'TO_TRUONG', 'CHUYEN_VIEN')) DEFAULT 'CHUYEN_VIEN',
+      parent_leader_id TEXT,
       is_active INTEGER DEFAULT 1,
       FOREIGN KEY (department_id) REFERENCES departments(id)
     );
@@ -101,11 +103,94 @@ function initDatabase() {
       FOREIGN KEY (recipient_account_id) REFERENCES accounts(id) ON DELETE CASCADE,
       FOREIGN KEY (sender_account_id) REFERENCES accounts(id)
     );
+
+    CREATE TABLE IF NOT EXISTS standalone_tasks (
+      id TEXT PRIMARY KEY,
+      task_code TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      created_by TEXT NOT NULL,
+      current_assignee_id TEXT,
+      current_assigner_id TEXT,
+      target_position_level TEXT,
+      priority TEXT CHECK(priority IN ('THUONG', 'KHAN', 'KHAN_CAP')) DEFAULT 'THUONG',
+      status TEXT CHECK(status IN (
+        'KHO_VIEC', 'DA_GIAO', 'DANG_THUC_HIEN', 'DE_XUAT_GIA_HAN', 'CHO_DUYET_HOAN_THANH', 'HOAN_THANH', 'HUY_BO'
+      )) DEFAULT 'KHO_VIEC',
+      due_date TEXT,
+      assigned_week INTEGER,
+      assigned_year INTEGER,
+      completion_proof TEXT DEFAULT '',
+      proof_file_url TEXT DEFAULT '',
+      assigned_assignees TEXT DEFAULT '[]',
+      is_dispatched INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES accounts(id),
+      FOREIGN KEY (current_assignee_id) REFERENCES accounts(id),
+      FOREIGN KEY (current_assigner_id) REFERENCES accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS task_assignment_history (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      assigner_id TEXT NOT NULL,
+      assignee_id TEXT NOT NULL,
+      from_position_level TEXT,
+      to_position_level TEXT NOT NULL,
+      instruction_note TEXT DEFAULT '',
+      assigned_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (task_id) REFERENCES standalone_tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (assigner_id) REFERENCES accounts(id),
+      FOREIGN KEY (assignee_id) REFERENCES accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS task_extensions (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      requester_id TEXT NOT NULL,
+      approver_id TEXT NOT NULL,
+      old_due_date TEXT NOT NULL,
+      requested_due_date TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT CHECK(status IN ('PENDING', 'APPROVED', 'REJECTED')) DEFAULT 'PENDING',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (task_id) REFERENCES standalone_tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (requester_id) REFERENCES accounts(id),
+      FOREIGN KEY (approver_id) REFERENCES accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS custom_roles (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      level_rank INTEGER NOT NULL,
+      description TEXT DEFAULT '',
+      scope_delegation TEXT DEFAULT '',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
-  seedDefaultData();
+  migrateAccountsTable();
   migrateReportsTable();
   migrateTasksTable();
+  migrateStandaloneTasksTable();
+  seedDefaultData();
+}
+
+function migrateAccountsTable() {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(accounts)").all();
+    const hasPositionLevel = tableInfo.some(col => col.name === 'position_level');
+    if (!hasPositionLevel) {
+      console.log('🔄 Đang thêm cột position_level & parent_leader_id vào bảng accounts...');
+      db.exec("ALTER TABLE accounts ADD COLUMN position_level TEXT CHECK(position_level IN ('GIAM_DOC', 'PHO_GIAM_DOC', 'TRUONG_PHONG', 'PHO_PHONG', 'TO_TRUONG', 'CHUYEN_VIEN')) DEFAULT 'CHUYEN_VIEN';");
+      db.exec("ALTER TABLE accounts ADD COLUMN parent_leader_id TEXT;");
+      console.log('✅ Đã cập nhật bảng accounts thành công!');
+    }
+  } catch (err) {
+    console.error('Lỗi khi migrate accounts table:', err);
+  }
 }
 
 function migrateTasksTable() {
@@ -120,6 +205,25 @@ function migrateTasksTable() {
     }
   } catch (err) {
     console.error('Lỗi khi migrate tasks table:', err);
+  }
+}
+
+function migrateStandaloneTasksTable() {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(standalone_tasks)").all();
+    const hasAssignedAssignees = tableInfo.some(col => col.name === 'assigned_assignees');
+    if (!hasAssignedAssignees) {
+      console.log('🔄 Đang thêm cột assigned_assignees & is_dispatched vào bảng standalone_tasks...');
+      db.exec("ALTER TABLE standalone_tasks ADD COLUMN assigned_assignees TEXT DEFAULT '[]';");
+      db.exec("ALTER TABLE standalone_tasks ADD COLUMN is_dispatched INTEGER DEFAULT 0;");
+      console.log('✅ Đã cập nhật bảng standalone_tasks thành công!');
+    }
+    const hasPoolHidden = tableInfo.some(col => col.name === 'is_pool_hidden');
+    if (!hasPoolHidden) {
+      db.exec("ALTER TABLE standalone_tasks ADD COLUMN is_pool_hidden INTEGER DEFAULT 0;");
+    }
+  } catch (err) {
+    console.error('Lỗi khi migrate standalone_tasks table:', err);
   }
 }
 
@@ -183,26 +287,57 @@ function seedDefaultData() {
     db.prepare('INSERT INTO departments (id, name, code) VALUES (?, ?, ?)').run('dept_vp', 'Văn phòng Ban Quản lý', 'VP');
     db.prepare('INSERT INTO departments (id, name, code) VALUES (?, ?, ?)').run('dept_pkh', 'Phòng Kế hoạch - Tài chính', 'PKH');
     db.prepare('INSERT INTO departments (id, name, code) VALUES (?, ?, ?)').run('dept_pql', 'Phòng Quản lý Đô thị & Môi trường', 'PQL');
-
-    // 2. Accounts
-    db.prepare('INSERT INTO accounts (id, department_id, username, password, full_name, role) VALUES (?, ?, ?, ?, ?, ?)').run('acc_admin', 'dept_vp', 'admin', '123456', 'Quản trị viên Hệ thống', 'ADMIN');
-    db.prepare('INSERT INTO accounts (id, department_id, username, password, full_name, role) VALUES (?, ?, ?, ?, ?, ?)').run('acc_vp_hoa', 'dept_vp', 'vanphong', '123456', 'Trần Thuận Hóa', 'LEADER');
-    db.prepare('INSERT INTO accounts (id, department_id, username, password, full_name, role) VALUES (?, ?, ?, ?, ?, ?)').run('acc_vp_khang', 'dept_vp', 'khang', '123456', 'Đoàn Anh Khang', 'STAFF');
-    db.prepare('INSERT INTO accounts (id, department_id, username, password, full_name, role) VALUES (?, ?, ?, ?, ?, ?)').run('acc_pkh_a', 'dept_pkh', 'kehoach', '123456', 'Nguyễn Văn A', 'STAFF');
-
-    console.log('Seeding departments & accounts completed successfully!');
-  } else {
-    // Ensure Khang account exists if missing in existing DB
-    const khangAcc = db.prepare("SELECT id FROM accounts WHERE username = 'khang'").get();
-    if (!khangAcc) {
-      db.prepare('INSERT INTO accounts (id, department_id, username, password, full_name, role) VALUES (?, ?, ?, ?, ?, ?)').run('acc_vp_khang', 'dept_vp', 'khang', '123456', 'Đoàn Anh Khang', 'STAFF');
-    }
   }
 
-  // Clear old sample hardcoded report from week 42 if present
+  // Ensure accounts have hierarchy positions & custom roles
+  seedSampleHierarchyData();
+}
+
+function seedSampleHierarchyData() {
   try {
-    db.prepare("DELETE FROM reports WHERE id = 'rpt_dept_vp_w42_2026'").run();
-  } catch (e) {}
+    // 1. Seed Custom Roles (6 Levels)
+    const roleCount = db.prepare('SELECT COUNT(*) as c FROM custom_roles').get().c;
+    if (roleCount === 0) {
+      const defaultRoles = [
+        { id: 'role_1', code: 'GIAM_DOC', name: 'Giám đốc', level_rank: 1, description: 'Lãnh đạo cao nhất Ban Quản lý', scope: 'Giao việc cho Phó Giám đốc, Trưởng phòng & tất cả các cấp' },
+        { id: 'role_2', code: 'PHO_GIAM_DOC', name: 'Phó Giám đốc', level_rank: 2, description: 'Lãnh đạo phụ trách khối/lĩnh vực', scope: 'Giao việc cho Trưởng phòng, Phó phòng & các cấp dưới' },
+        { id: 'role_3', code: 'TRUONG_PHONG', name: 'Trưởng phòng', level_rank: 3, description: 'Quản lý điều hành Phòng ban', scope: 'Giao việc cho Phó phòng, Tổ trưởng & Chuyên viên' },
+        { id: 'role_4', code: 'PHO_PHONG', name: 'Phó phòng', level_rank: 4, description: 'Phụ trách chuyên môn kỹ thuật', scope: 'Giao việc cho Tổ trưởng & Chuyên viên trong phòng' },
+        { id: 'role_5', code: 'TO_TRUONG', name: 'Tổ trưởng', level_rank: 5, description: 'Đánh giá & Quản lý nhóm chuyên môn', scope: 'Giao việc trực tiếp cho Chuyên viên' },
+        { id: 'role_6', code: 'CHUYEN_VIEN', name: 'Chuyên viên', level_rank: 6, description: 'Thực hiện trực tiếp nhiệm vụ & báo cáo', scope: 'Nhận việc từ các cấp trên & Báo cáo kết quả/Gia hạn' }
+      ];
+
+      for (const r of defaultRoles) {
+        db.prepare('INSERT INTO custom_roles (id, code, name, level_rank, description, scope_delegation) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(r.id, r.code, r.name, r.level_rank, r.description, r.scope);
+      }
+    }
+
+    // 2. Seed / Update 6 Hierarchy Accounts
+    const hierarchyUsers = [
+      { id: 'acc_gd_minh', username: 'giamdoc', full_name: '[1] Giám đốc - Nguyễn Văn Minh', role: 'ADMIN', position_level: 'GIAM_DOC' },
+      { id: 'acc_pgd_nam', username: 'phogiamdoc', full_name: '[2] Phó Giám đốc - Trần Văn Nam', role: 'LEADER', position_level: 'PHO_GIAM_DOC' },
+      { id: 'acc_tp_hoa', username: 'vanphong', full_name: '[3] Trưởng phòng - Trần Thuận Hóa', role: 'LEADER', position_level: 'TRUONG_PHONG' },
+      { id: 'acc_tp_hoa2', username: 'truongphong', full_name: '[3] Trưởng phòng - Nguyễn Thị Lan', role: 'LEADER', position_level: 'TRUONG_PHONG' },
+      { id: 'acc_pp_mai', username: 'phophong', full_name: '[4] Phó phòng - Lê Thị Mai', role: 'LEADER', position_level: 'PHO_PHONG' },
+      { id: 'acc_tt_binh', username: 'totruong', full_name: '[5] Tổ trưởng - Phạm Văn Bình', role: 'STAFF', position_level: 'TO_TRUONG' },
+      { id: 'acc_cv_khang', username: 'khang', full_name: '[6] Chuyên viên - Đoàn Anh Khang', role: 'STAFF', position_level: 'CHUYEN_VIEN' },
+      { id: 'acc_cv_tuan', username: 'chuyenvien', full_name: '[6] Chuyên viên - Võ Văn Tuấn', role: 'STAFF', position_level: 'CHUYEN_VIEN' }
+    ];
+
+    for (const u of hierarchyUsers) {
+      const existing = db.prepare("SELECT id FROM accounts WHERE username = ?").get(u.username);
+      if (!existing) {
+        db.prepare('INSERT INTO accounts (id, department_id, username, password, full_name, role, position_level) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(u.id, 'dept_vp', u.username, '123456', u.full_name, u.role, u.position_level);
+      } else {
+        db.prepare("UPDATE accounts SET full_name = ?, position_level = ? WHERE username = ?")
+          .run(u.full_name, u.position_level, u.username);
+      }
+    }
+  } catch (err) {
+    console.error('Lỗi khi seed hierarchy users:', err);
+  }
 }
 
 initDatabase();

@@ -141,6 +141,177 @@ export async function markNotificationReadApi(notificationId?: string, accountId
   }
 }
 
+/* ==========================================================================
+   API KHO NHIỆM VỤ CHUNG ĐỘC LẬP & GIAO VIỆC PHÂN CẤP (STANDALONE TASK POOL)
+   ========================================================================== */
+
+export async function fetchStandaloneTasks(accountId?: string) {
+  try {
+    const url = accountId ? `/api/standalone-tasks?account_id=${accountId}` : '/api/standalone-tasks';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Không thể tải danh sách nhiệm vụ chung');
+    return await res.json();
+  } catch (err: any) {
+    console.warn('Lỗi fetchStandaloneTasks:', err);
+    return { success: false, tasks: [] };
+  }
+}
+
+export async function fetchAccountsByPosition(positionLevel?: string) {
+  try {
+    const url = positionLevel ? `/api/standalone-tasks/accounts-by-position?position_level=${positionLevel}` : '/api/standalone-tasks/accounts-by-position';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Không thể tải danh sách tài khoản theo cấp');
+    return await res.json();
+  } catch (err: any) {
+    console.warn('Lỗi fetchAccountsByPosition:', err);
+    return { success: false, accounts: [] };
+  }
+}
+
+export async function createStandaloneTaskApi(payload: { title: string; description?: string; created_by: string; priority?: string; due_date?: string }) {
+  try {
+    const res = await fetch('/api/standalone-tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function assignStandaloneTaskApi(payload: { task_id: string; assigner_id: string; assignee_id: string; target_position_level: string; instruction_note?: string; due_date?: string }) {
+  try {
+    const res = await fetch('/api/standalone-tasks/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function stageStandaloneTaskAssigneeApi(payload: { task_id: string; assignee_id: string; position_level: string; instruction_note?: string }) {
+  try {
+    const res = await fetch('/api/standalone-tasks/stage-assignee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function unstageStandaloneTaskAssigneeApi(payload: { task_id: string; assignee_id: string }) {
+  try {
+    const res = await fetch('/api/standalone-tasks/unstage-assignee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function dismissStandaloneTaskFromPoolApi(taskId: string) {
+  try {
+    const res = await fetch('/api/standalone-tasks/dismiss-pool', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: taskId })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function requestTaskExtensionApi(payload: { task_id: string; requester_id: string; requested_due_date: string; reason: string }) {
+  try {
+    const res = await fetch('/api/standalone-tasks/request-extension', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function approveTaskExtensionApi(payload: { extension_id: string; approver_id: string; action: 'APPROVE' | 'REJECT' }) {
+  try {
+    const res = await fetch('/api/standalone-tasks/approve-extension', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function completeStandaloneTaskApi(payload: { task_id: string; account_id: string; completion_proof?: string; proof_file_url?: string }) {
+  try {
+    const res = await fetch('/api/standalone-tasks/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteStandaloneTaskApi(taskId: string) {
+  try {
+    const res = await fetch(`/api/standalone-tasks/${taskId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return { success: false, error: text || `Lỗi máy chủ (${res.status})` };
+    }
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function publishAssignmentPlanApi(assignerId: string) {
+  try {
+    const res = await fetch('/api/standalone-tasks/publish-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assigner_id: assignerId })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchSyncedDirectiveTasks(accountId: string, week?: number, year?: number) {
+  try {
+    let url = `/api/standalone-tasks/synced-directive?account_id=${accountId}`;
+    if (week && year) url += `&week=${week}&year=${year}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Không thể tải nhiệm vụ chỉ đạo');
+    return await res.json();
+  } catch (err: any) {
+    console.warn('Lỗi fetchSyncedDirectiveTasks:', err);
+    return { success: false, directive_tasks: [] };
+  }
+}
+
 export async function triggerCarryOver(departmentId: string, currentWeek: number, currentYear: number, accountId: string) {
   try {
     const res = await fetch('/api/reports/carry-over', {
@@ -1011,6 +1182,31 @@ export async function createAdminDepartment(deptData: any) {
     return await res.json();
   } catch (err: any) {
     console.error('Lỗi createAdminDepartment:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchAdminRoles() {
+  try {
+    const res = await fetch('/api/admin/roles');
+    if (!res.ok) throw new Error('Không thể tải danh sách vai trò');
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi fetchAdminRoles:', err);
+    return { success: false, roles: [] };
+  }
+}
+
+export async function createAdminRole(roleData: any) {
+  try {
+    const res = await fetch('/api/admin/roles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(roleData)
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi createAdminRole:', err);
     return { success: false, error: err.message };
   }
 }

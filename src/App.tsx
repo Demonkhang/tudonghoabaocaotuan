@@ -15,6 +15,7 @@ import { ShareReportModal } from './components/ShareReportModal';
 import { CompletionProofModal } from './components/CompletionProofModal';
 import { TaskDetailModal } from './components/TaskDetailModal';
 import { ReportChoiceModal } from './components/ReportChoiceModal';
+import { StandaloneTaskKanbanModal } from './components/StandaloneTaskKanbanModal';
 import { FileSpreadsheet, Upload, Download, Sparkles, CheckCircle, History, PlusCircle, Layout } from 'lucide-react';
 import {
   TaskTable1,
@@ -23,7 +24,7 @@ import {
   validateReport,
   toInputDate
 } from './utils/reportUtils';
-import { exportWordReport, fetchReportDetail, saveReportData, triggerCarryOver, fetchReportHistory } from './services/api';
+import { exportWordReport, fetchReportDetail, saveReportData, triggerCarryOver, fetchReportHistory, fetchSyncedDirectiveTasks } from './services/api';
 import { parseExcelFile, downloadExcelTemplate } from './utils/excelParser';
 import { exportReportToExcel } from './utils/excelExporter';
 
@@ -159,6 +160,7 @@ export default function App() {
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isCarryOverOpen, setIsCarryOverOpen] = useState<boolean>(false);
   const [isKanbanPlannerOpen, setIsKanbanPlannerOpen] = useState<boolean>(false);
+  const [isStandaloneTaskKanbanOpen, setIsStandaloneTaskKanbanOpen] = useState<boolean>(false);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
   const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
   const [userPermission, setUserPermission] = useState<'OWNER' | 'ADMIN' | 'EDIT' | 'VIEW' | 'NO_ACCESS'>('OWNER');
@@ -243,11 +245,48 @@ export default function App() {
   const loadReportFromDB = async (deptId: string, week: number, year: number, reportId?: string) => {
     setIsLoading(true);
     const res = await fetchReportDetail(deptId, week, year, reportId, currentUser?.id);
+
+    let fetchedTable1: TaskTable1[] = [];
+    let fetchedTable2: TaskTable2[] = [];
+
+    if (res && res.success && res.data) {
+      fetchedTable1 = res.data.table1 || [];
+      fetchedTable2 = res.data.table2 || [];
+    }
+
+    // Tự động nạp Nhiệm vụ Phân Cấp được giao từ Kho Chung nếu có
+    if (currentUser?.id) {
+      try {
+        const dirRes = await fetchSyncedDirectiveTasks(currentUser.id, week, year);
+        if (dirRes && dirRes.success && Array.isArray(dirRes.directive_tasks)) {
+          const dirItems: TaskTable1[] = dirRes.directive_tasks.map((dt: any) => ({
+            id: `dir_${dt.id}`,
+            noi_dung: dt.title,
+            thoi_gian: dt.due_date || 'Chưa định',
+            trien_khai: dt.completion_proof || dt.description || 'Đang triển khai chỉ đạo cấp trên',
+            tien_do: dt.status === 'HOAN_THANH' ? 'Hoàn thành' : dt.status === 'DE_XUAT_GIA_HAN' ? 'Hoàn thành trễ' : 'Đang thực hiện',
+            nhom: 'Thường xuyên',
+            is_directive_task: true,
+            assigner_name: dt.assigner_name || 'Lãnh đạo',
+            task_code: dt.task_code,
+            isEdited: false
+          }));
+
+          const existingIds = new Set(fetchedTable1.map(t => t.id));
+          for (const item of dirItems) {
+            if (!existingIds.has(item.id)) {
+              fetchedTable1.unshift(item);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Không thể nạp nhiệm vụ chỉ đạo:', e);
+      }
+    }
+
     setIsLoading(false);
 
     if (res && res.success && res.data) {
-      const fetchedTable1 = res.data.table1 || [];
-      const fetchedTable2 = res.data.table2 || [];
       const valid1 = fetchedTable1.filter((t: any) => (t.noi_dung || '').trim().length > 0);
       const valid2 = fetchedTable2.filter((t: any) => (t.noi_dung || '').trim().length > 0);
       const hasAnyTask = valid1.length > 0 || valid2.length > 0;
@@ -773,6 +812,7 @@ export default function App() {
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenCarryOver={() => setIsCarryOverOpen(true)}
         onOpenKanbanPlanner={() => setIsKanbanPlannerOpen(true)}
+        onOpenStandaloneTaskKanban={() => setIsStandaloneTaskKanbanOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenShare={() => setIsShareOpen(true)}
         onSave={handleSaveReport}
@@ -1082,6 +1122,19 @@ export default function App() {
           loadReportFromDB(currentUser.department_id, metadata.tuan, metadata.nam, personalReportId);
           showToast(`Đã chuyển sang Báo cáo Cá nhân của bạn cho Tuần ${metadata.tuan}!`);
         }}
+      />
+
+      {/* MODAL KHO NHIỆM VỤ CHUNG ĐỘC LẬP & GIAO VIỆC PHÂN CẤP */}
+      <StandaloneTaskKanbanModal
+        isOpen={isStandaloneTaskKanbanOpen}
+        onClose={() => {
+          setIsStandaloneTaskKanbanOpen(false);
+          // Refresh weekly report data in case tasks were assigned/completed
+          if (currentUser) {
+            loadReportFromDB(currentUser.department_id, metadata.tuan, metadata.nam);
+          }
+        }}
+        currentAccount={currentUser}
       />
     </div>
   );

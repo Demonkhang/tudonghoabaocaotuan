@@ -186,18 +186,37 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                   
                   {/* Nội dung Inline Edit */}
                   <td className="px-4 py-3 relative">
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={row.noi_dung}
-                        onChange={e => updateTable1Field(row.id, 'noi_dung', e.target.value)}
-                        className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium"
-                      />
-                      {row.isEdited && (
-                        <span className="flex items-center text-[10px] bg-amber-100 dark:bg-amber-950 dark:text-amber-300 text-amber-800 px-1.5 py-0.5 rounded font-bold shrink-0 border border-amber-300 dark:border-amber-700" title="Đã sửa">
-                          <Pencil className="w-3 h-3 mr-0.5" /> Đã sửa
-                        </span>
+                    <div className="flex flex-col gap-1">
+                      {row.is_directive_task && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-purple-900/80 text-purple-200 px-2 py-0.5 rounded-md border border-purple-700/60 shadow-xs">
+                            <span>👑 Chỉ Đạo Cấp Trên</span>
+                            {row.task_code && <span className="opacity-75 font-mono">({row.task_code})</span>}
+                          </span>
+                          {row.assigner_name && (
+                            <span className="text-[10px] text-purple-400 font-medium">
+                              Giao bởi: {row.assigner_name}
+                            </span>
+                          )}
+                        </div>
                       )}
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          readOnly={row.is_directive_task}
+                          value={row.noi_dung}
+                          onChange={e => updateTable1Field(row.id, 'noi_dung', e.target.value)}
+                          className={`w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium ${
+                            row.is_directive_task ? 'font-semibold text-purple-900 dark:text-purple-200 cursor-not-allowed' : ''
+                          }`}
+                          title={row.is_directive_task ? 'Nhiệm vụ phân cấp từ cấp trên - không thể sửa tên' : ''}
+                        />
+                        {row.isEdited && !row.is_directive_task && (
+                          <span className="flex items-center text-[10px] bg-amber-100 dark:bg-amber-950 dark:text-amber-300 text-amber-800 px-1.5 py-0.5 rounded font-bold shrink-0 border border-amber-300 dark:border-amber-700" title="Đã sửa">
+                            <Pencil className="w-3 h-3 mr-0.5" /> Đã sửa
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
 
@@ -205,11 +224,14 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                   <td className="px-4 py-3">
                     <input
                       type="text"
+                      readOnly={row.is_directive_task}
                       value={row.thoi_gian}
                       onChange={e => updateTable1Field(row.id, 'thoi_gian', e.target.value)}
                       className={`w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded ${
+                        row.is_directive_task ? 'font-bold text-purple-700 dark:text-purple-300 cursor-not-allowed' :
                         row.thoi_gian === 'Chưa nhập' ? 'text-red-600 dark:text-red-400 font-semibold italic' : 'text-slate-700 dark:text-slate-200'
                       }`}
+                      title={row.is_directive_task ? 'Hạn xử lý do Cấp trên ấn định' : ''}
                     />
                   </td>
 

@@ -12,7 +12,7 @@ export async function login(req, res) {
     }
 
     const account = db.prepare(`
-      SELECT a.id, a.username, a.full_name, a.role, a.department_id, a.password, d.name as department_name, d.code as department_code
+      SELECT a.id, a.username, a.full_name, a.role, a.position_level, a.department_id, a.password, d.name as department_name, d.code as department_code
       FROM accounts a
       JOIN departments d ON a.department_id = d.id
       WHERE a.username = ? AND a.is_active = 1
@@ -34,6 +34,7 @@ export async function login(req, res) {
         username: account.username,
         full_name: account.full_name,
         role: account.role,
+        position_level: account.position_level || 'CHUYEN_VIEN',
         department_id: account.department_id,
         department_name: account.department_name,
         department_code: account.department_code
@@ -52,7 +53,7 @@ export async function getDepartments(req, res) {
   try {
     const depts = db.prepare('SELECT * FROM departments ORDER BY code ASC').all();
     const accounts = db.prepare(`
-      SELECT a.id, a.username, a.full_name, a.role, a.department_id, a.is_active, d.name as department_name, d.code as department_code
+      SELECT a.id, a.username, a.full_name, a.role, a.position_level, a.department_id, a.is_active, d.name as department_name, d.code as department_code
       FROM accounts a
       JOIN departments d ON a.department_id = d.id
       ORDER BY a.username ASC
@@ -70,7 +71,7 @@ export async function getDepartments(req, res) {
 export async function getAccounts(req, res) {
   try {
     const accounts = db.prepare(`
-      SELECT a.id, a.username, a.full_name, a.role, a.department_id, a.is_active, d.name as department_name, d.code as department_code
+      SELECT a.id, a.username, a.full_name, a.role, a.position_level, a.department_id, a.is_active, d.name as department_name, d.code as department_code
       FROM accounts a
       JOIN departments d ON a.department_id = d.id
       ORDER BY a.username ASC
@@ -86,7 +87,7 @@ export async function getAccounts(req, res) {
  */
 export async function createAccount(req, res) {
   try {
-    const { username, password, full_name, department_id, role } = req.body;
+    const { username, password, full_name, department_id, role, position_level } = req.body;
 
     if (!username || !password || !full_name || !department_id) {
       return res.status(400).json({ success: false, error: 'Vui lòng điền đầy đủ thông tin tài khoản' });
@@ -98,19 +99,45 @@ export async function createAccount(req, res) {
     }
 
     const newId = `acc_${username}_${Date.now()}`;
+    const posLevel = position_level || 'CHUYEN_VIEN';
+
     db.prepare(`
-      INSERT INTO accounts (id, department_id, username, password, full_name, role, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, 1)
-    `).run(newId, department_id, username, password, full_name, role || 'STAFF');
+      INSERT INTO accounts (id, department_id, username, password, full_name, role, position_level)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(newId, department_id, username, password, full_name, role || 'STAFF', posLevel);
 
-    const created = db.prepare(`
-      SELECT a.id, a.username, a.full_name, a.role, a.department_id, a.is_active, d.name as department_name, d.code as department_code
-      FROM accounts a
-      JOIN departments d ON a.department_id = d.id
-      WHERE a.id = ?
-    `).get(newId);
+    return res.json({ success: true, message: 'Tạo tài khoản thành công!' });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
 
-    return res.json({ success: true, message: `Đã tạo tài khoản "${full_name}" thành công!`, account: created });
+/**
+ * 2d. Quản trị: Lấy và khởi tạo danh sách Vai Trò & Phân Cấp
+ */
+export async function getRoles(req, res) {
+  try {
+    const roles = db.prepare('SELECT * FROM custom_roles ORDER BY level_rank ASC').all();
+    return res.json({ success: true, roles });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function createRole(req, res) {
+  try {
+    const { code, name, level_rank, description, scope_delegation } = req.body;
+    if (!code || !name || !level_rank) {
+      return res.status(400).json({ success: false, error: 'Thiếu mã, tên vai trò hoặc cấp bậc' });
+    }
+
+    const roleId = `role_${Date.now()}`;
+    db.prepare(`
+      INSERT INTO custom_roles (id, code, name, level_rank, description, scope_delegation)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(roleId, code, name, level_rank, description || '', scope_delegation || '');
+
+    return res.json({ success: true, message: 'Tạo vai trò mới thành công' });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
   }

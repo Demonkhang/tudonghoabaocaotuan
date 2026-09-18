@@ -7,6 +7,7 @@ import { createServer as createViteServer } from 'vite';
 
 // Import controllers & db
 import * as reportController from './server/src/controllers/reportController.js';
+import * as standaloneTaskController from './server/src/controllers/standaloneTaskController.js';
 
 // Ensure uploads directory exists for Docker volume persistence
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -52,6 +53,22 @@ async function startServer() {
   app.post('/api/admin/accounts', reportController.createAccount);
   app.delete('/api/admin/accounts/:id', reportController.deleteAccount);
   app.post('/api/admin/departments', reportController.createDepartment);
+  app.get('/api/admin/roles', reportController.getRoles);
+  app.post('/api/admin/roles', reportController.createRole);
+
+  // API Endpoints - Standalone Task Pool (Kho Nhiệm Vụ Chung Phân Cấp)
+  app.get('/api/standalone-tasks', standaloneTaskController.getTasks);
+  app.get('/api/standalone-tasks/accounts-by-position', standaloneTaskController.getAccountsByPosition);
+  app.post('/api/standalone-tasks', standaloneTaskController.createTask);
+  app.post('/api/standalone-tasks/assign', standaloneTaskController.assignTask);
+  app.post('/api/standalone-tasks/stage-assignee', standaloneTaskController.stageAssignee);
+  app.post('/api/standalone-tasks/unstage-assignee', standaloneTaskController.unstageAssignee);
+  app.post('/api/standalone-tasks/request-extension', standaloneTaskController.requestExtension);
+  app.post('/api/standalone-tasks/approve-extension', standaloneTaskController.approveExtension);
+  app.post('/api/standalone-tasks/dismiss-pool', standaloneTaskController.dismissPoolTask);
+  app.delete('/api/standalone-tasks/:id', standaloneTaskController.deleteTask);
+  app.post('/api/standalone-tasks/publish-plan', standaloneTaskController.publishPlan);
+  app.get('/api/standalone-tasks/synced-directive', standaloneTaskController.getSyncedDirectiveTasks);
 
   // API Endpoints - Reports & History & Carry-Over Core
   app.get('/api/reports/history', reportController.getReportHistory);

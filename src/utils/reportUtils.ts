@@ -9,6 +9,9 @@ export interface TaskTable1 {
   file_original_name?: string;
   nhom: 'Thường xuyên' | 'Đột xuất';
   isEdited?: boolean;
+  is_directive_task?: boolean;
+  assigner_name?: string;
+  task_code?: string;
   originalData?: any;
 }
 
