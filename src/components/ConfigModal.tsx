@@ -51,7 +51,7 @@ function parseTable1(rows) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden flex flex-col">
         <div className="bg-[#005dac] text-white px-6 py-3.5 flex items-center justify-between">
           <h3 className="font-bold text-base flex items-center gap-2">

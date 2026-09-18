@@ -4,15 +4,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (import.meta && import.meta.url ? path.dirname(fileURLToPath(import.meta.url)) : process.cwd());
 
 /**
  * Xử lý tạo file Word .docx từ dữ liệu báo cáo tuần
  * Tuân thủ quy tắc BR01 - BR15 & Thể thức văn bản hành chính Việt Nam (Nghị định 30/2020/NĐ-CP)
  */
 export function createDocxReport(data) {
-  const templatePath = path.join(__dirname, '../../templates/report_template.docx');
+  const templatePath = process.env.TEMPLATE_PATH || path.join(currentDir, '../../templates/report_template.docx');
 
   let zip;
   if (fs.existsSync(templatePath)) {
@@ -180,6 +181,59 @@ export function classifyTask(noiDung) {
   return 'Thường xuyên';
 }
 
+function isRoutineTime(timeStr) {
+  if (!timeStr) return true;
+  const lower = String(timeStr).toLowerCase().trim();
+  if (
+    lower.includes('thường xuyên') ||
+    lower.includes('thuong xuyen') ||
+    lower.includes('trong tuần') ||
+    lower.includes('trong tuan') ||
+    lower.includes('chưa nhập') ||
+    lower === ''
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function parseVietDate(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const match = s.match(/(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const rawYear = match[3];
+    const year = rawYear ? (rawYear.length === 2 ? 2000 + parseInt(rawYear, 10) : parseInt(rawYear, 10)) : 2026;
+    return new Date(year, month - 1, day).getTime();
+  }
+  return null;
+}
+
+function sortTasksByTime(tasks) {
+  return [...tasks].sort((a, b) => {
+    const timeA = a.thoi_gian || a.thoi_gian_du_kien || a.thoiGian || '';
+    const timeB = b.thoi_gian || b.thoi_gian_du_kien || b.thoiGian || '';
+
+    const routineA = isRoutineTime(timeA);
+    const routineB = isRoutineTime(timeB);
+
+    if (!routineA && routineB) return -1;
+    if (routineA && !routineB) return 1;
+
+    if (!routineA && !routineB) {
+      const dateA = parseVietDate(timeA);
+      const dateB = parseVietDate(timeB);
+      if (dateA !== null && dateB !== null) {
+        return dateA - dateB;
+      }
+    }
+
+    return 0;
+  });
+}
+
 /**
  * Chuẩn hóa dữ liệu theo đúng danh sách thẻ Placeholder trong README_TEMPLATES.md
  */
@@ -193,14 +247,17 @@ export function formatDataForTemplate(data) {
     return noiDung.trim().length > 0 && !isIgnoredRow(noiDung);
   });
 
-  const tx1 = cleanTable1.filter(t => {
+  const tx1Raw = cleanTable1.filter(t => {
     const nhom = t.nhom || classifyTask(t.noi_dung || t.noiDung);
     return nhom === 'Thường xuyên' || String(nhom).toLowerCase().includes('thường xuyên');
   });
-  const dx1 = cleanTable1.filter(t => {
+  const dx1Raw = cleanTable1.filter(t => {
     const nhom = t.nhom || classifyTask(t.noi_dung || t.noiDung);
     return nhom === 'Đột xuất' || String(nhom).toLowerCase().includes('đột xuất');
   });
+
+  const tx1 = sortTasksByTime(tx1Raw);
+  const dx1 = sortTasksByTime(dx1Raw);
 
   const thuongxuyen_ketqua = tx1.map((item, idx) => ({
     stt: idx + 1,
@@ -225,14 +282,17 @@ export function formatDataForTemplate(data) {
     return noiDung.trim().length > 0 && !isIgnoredRow(noiDung);
   });
 
-  const tx2 = cleanTable2.filter(t => {
+  const tx2Raw = cleanTable2.filter(t => {
     const nhom = t.nhom || classifyTask(t.noi_dung || t.noiDung);
     return nhom === 'Thường xuyên' || String(nhom).toLowerCase().includes('thường xuyên');
   });
-  const dx2 = cleanTable2.filter(t => {
+  const dx2Raw = cleanTable2.filter(t => {
     const nhom = t.nhom || classifyTask(t.noi_dung || t.noiDung);
     return nhom === 'Đột xuất' || String(nhom).toLowerCase().includes('đột xuất');
   });
+
+  const tx2 = sortTasksByTime(tx2Raw);
+  const dx2 = sortTasksByTime(dx2Raw);
 
   const thuongxuyen_kehoach = tx2.map((item, idx) => ({
     stt: idx + 1,
@@ -261,7 +321,7 @@ export function formatDataForTemplate(data) {
     tuan: metadata.tuan || 42,
     tuan_tiep: metadata.tuan_tiep || (metadata.tuan ? metadata.tuan + 1 : 43),
     ngay_lap: formatNgayLap(metadata.ngay_lap),
-    nguoi_lap: metadata.nguoi_lap || 'Trần Thuận Hóa',
+    nguoi_lap: metadata.nguoi_lap || '',
     kho_khan: metadata.kho_khan || 'Không',
 
     tong_nhiem_vu: totalT1,
@@ -388,7 +448,6 @@ export function createMinimalDocxZip() {
       </w:tblGrid>
       <!-- HEADER ROW -->
       <w:tr>
-        <w:trPr><w:tblHeader/></w:trPr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/></w:tcPr>
           <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>STT</w:t></w:r></w:p>
@@ -519,7 +578,6 @@ export function createMinimalDocxZip() {
       </w:tblGrid>
       <!-- HEADER ROW -->
       <w:tr>
-        <w:trPr><w:tblHeader/></w:trPr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/></w:tcPr>
           <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>STT</w:t></w:r></w:p>

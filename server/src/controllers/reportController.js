@@ -164,7 +164,11 @@ export async function createDepartment(req, res) {
 export async function getReportHistory(req, res) {
   try {
     const { department_id, account_id } = req.query;
-    const currentUserId = account_id || 'acc_vp_hoa';
+    const currentUserId = account_id;
+
+    if (!currentUserId) {
+      return res.json({ success: true, reports: [] });
+    }
 
     const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId);
     const isAdmin = currentUser && currentUser.role === 'ADMIN';
@@ -225,7 +229,14 @@ export async function getReportHistory(req, res) {
 export async function getReportDetail(req, res) {
   try {
     const { department_id, week, year, report_id, account_id } = req.query;
-    const currentUserId = account_id || 'acc_vp_hoa';
+    const currentUserId = account_id;
+
+    if (!currentUserId) {
+      return res.status(400).json({ success: false, error: 'Thiếu thông tin người dùng' });
+    }
+
+    const currentUser = db.prepare('SELECT role, department_id FROM accounts WHERE id = ?').get(currentUserId);
+    const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
     let report;
     if (report_id) {
@@ -237,15 +248,31 @@ export async function getReportDetail(req, res) {
         WHERE r.id = ?
       `).get(report_id);
     } else {
+      const targetWeek = parseInt(week || '42', 10);
+      const targetYear = parseInt(year || '2026', 10);
+
+      // 1. Tìm báo cáo theo account_id hiện tại
       report = db.prepare(`
         SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
         FROM reports r
         JOIN accounts a ON r.account_id = a.id
         JOIN departments d ON r.department_id = d.id
         WHERE r.account_id = ? AND r.week_number = ? AND r.year = ?
-      `).get(currentUserId, parseInt(week || '42', 10), parseInt(year || '2026', 10));
+      `).get(currentUserId, targetWeek, targetYear);
 
-      // Fallback: If not found by current account_id, check if there's any report shared with current account for that week/year
+      // 2. Nếu là ADMIN và có department_id, ADMIN mới được xem báo cáo phòng ban đó
+      if (!report && isAdmin && department_id) {
+        report = db.prepare(`
+          SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
+          FROM reports r
+          JOIN accounts a ON r.account_id = a.id
+          JOIN departments d ON r.department_id = d.id
+          WHERE r.department_id = ? AND r.week_number = ? AND r.year = ?
+          ORDER BY r.updated_at DESC
+        `).get(department_id, targetWeek, targetYear);
+      }
+
+      // 3. Dự phòng: Tìm theo báo cáo được chia sẻ cho account_id
       if (!report) {
         report = db.prepare(`
           SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
@@ -254,7 +281,7 @@ export async function getReportDetail(req, res) {
           JOIN departments d ON r.department_id = d.id
           JOIN report_shares rs ON r.id = rs.report_id
           WHERE rs.shared_with_account_id = ? AND r.week_number = ? AND r.year = ?
-        `).get(currentUserId, parseInt(week || '42', 10), parseInt(year || '2026', 10));
+        `).get(currentUserId, targetWeek, targetYear);
       }
     }
 
@@ -263,12 +290,11 @@ export async function getReportDetail(req, res) {
     }
 
     // Kiểm tra quyền của currentUserId với báo cáo này
-    const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId);
     let userPermission = 'NO_ACCESS';
 
     if (report.account_id === currentUserId) {
       userPermission = 'OWNER';
-    } else if (currentUser && currentUser.role === 'ADMIN') {
+    } else if (isAdmin) {
       userPermission = 'ADMIN';
     } else {
       const share = db.prepare('SELECT permission FROM report_shares WHERE report_id = ? AND shared_with_account_id = ?').get(report.id, currentUserId);
@@ -289,6 +315,9 @@ export async function getReportDetail(req, res) {
       thoi_gian: t.thoi_gian,
       trien_khai: t.trien_khai,
       tien_do: t.tien_do,
+      san_pham: t.san_pham || '',
+      file_minh_chung: t.file_minh_chung || '',
+      file_original_name: t.file_original_name || '',
       nhom: t.category,
       parent_task_id: t.parent_task_id,
       isEdited: false
@@ -346,21 +375,24 @@ export async function saveReport(req, res) {
     const week = parseInt(metadata.tuan, 10);
     const year = parseInt(metadata.nam || '2026', 10);
 
-    // Xác định ID báo cáo. Nếu là báo cáo của riêng user, ID format: rpt_${currentUserId}_w${week}_${year}
+    // Xác định ID báo cáo theo tài khoản cá nhân: rpt_${currentUserId}_w${week}_${year}
     let targetReportId = metadata.report_id;
-    if (!targetReportId) {
+    if (!targetReportId || targetReportId.startsWith('rpt_dept_')) {
       targetReportId = `rpt_${currentUserId}_w${week}_${year}`;
     }
+
+    // Lấy thông tin tài khoản người thực hiện lưu
+    const editorAccount = db.prepare('SELECT full_name, role FROM accounts WHERE id = ?').get(currentUserId);
+    const editorName = editorAccount ? editorAccount.full_name : currentUserId;
 
     // Kiểm tra xem báo cáo đã tồn tại chưa
     const existingReport = db.prepare('SELECT * FROM reports WHERE id = ?').get(targetReportId);
 
     if (existingReport) {
       // Kiểm tra quyền sửa
-      const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId);
       let canEdit = false;
 
-      if (existingReport.account_id === currentUserId || (currentUser && currentUser.role === 'ADMIN')) {
+      if (existingReport.account_id === currentUserId || (editorAccount && editorAccount.role === 'ADMIN')) {
         canEdit = true;
       } else {
         const share = db.prepare('SELECT permission FROM report_shares WHERE report_id = ? AND shared_with_account_id = ?').get(targetReportId, currentUserId);
@@ -373,70 +405,107 @@ export async function saveReport(req, res) {
         return res.status(403).json({ success: false, error: 'Bạn chỉ có quyền xem (VIEW) báo cáo này, không có quyền lưu chỉnh sửa!' });
       }
 
-      // Update existing
-      db.prepare(`
-        UPDATE reports
-        SET kho_khan = ?, status = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(metadata.kho_khan || 'Không', metadata.status || 'DRAFT', targetReportId);
-
-    } else {
-      // Create new report owned by currentUserId
-      db.prepare(`
-        INSERT INTO reports (id, department_id, account_id, week_number, year, status, kho_khan, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `).run(targetReportId, deptId, currentUserId, week, year, metadata.status || 'DRAFT', metadata.kho_khan || 'Không');
+    // Check concurrency conflict
+      const clientLastUpdated = req.body.client_last_updated_at;
+      const forceSave = req.body.force_save;
+      if (clientLastUpdated && existingReport.updated_at && !forceSave) {
+        const existingTime = new Date(existingReport.updated_at).getTime();
+        const clientTime = new Date(clientLastUpdated).getTime();
+        if (existingTime - clientTime > 2000) { // 2s tolerance
+          return res.json({
+            success: false,
+            conflict: true,
+            message: `⚠️ Xung đột dữ liệu: Báo cáo này vừa được [${existingReport.last_edited_by || 'người dùng khác'}] cập nhật mới hơn vào lúc ${existingReport.updated_at}. Bạn có muốn ghi đè?`,
+            last_edited_by: existingReport.last_edited_by,
+            updated_at: existingReport.updated_at
+          });
+        }
+      }
     }
 
-    // Replace tasks
-    db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
+    // Atomic transaction for database safety
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      if (existingReport) {
+        // Update existing report
+        db.prepare(`
+          UPDATE reports
+          SET kho_khan = ?, status = ?, created_at = COALESCE(?, created_at), updated_at = CURRENT_TIMESTAMP, last_edited_by = ?
+          WHERE id = ?
+        `).run(metadata.kho_khan || 'Không', metadata.status || 'DRAFT', metadata.ngay_lap || null, editorName, targetReportId);
 
-    const stmtTask = db.prepare(`
-      INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+      } else {
+        // Create new report owned by currentUserId
+        db.prepare(`
+          INSERT INTO reports (id, department_id, account_id, week_number, year, status, kho_khan, created_at, updated_at, last_edited_by)
+          VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, ?)
+        `).run(targetReportId, deptId, currentUserId, week, year, metadata.status || 'DRAFT', metadata.kho_khan || 'Không', metadata.ngay_lap || null, editorName);
+      }
 
-    (table1 || []).forEach((t, idx) => {
-      let cat = t.nhom || 'Thường xuyên';
-      if (cat.toLowerCase().includes('đột')) cat = 'Đột xuất';
-      else cat = 'Thường xuyên';
+      // Replace tasks for targetReportId
+      db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
 
-      stmtTask.run(
-        t.id || `t1_${targetReportId}_${idx}_${Date.now()}`,
-        targetReportId,
-        1,
-        cat,
-        t.noi_dung || '',
-        t.thoi_gian || 'Chưa nhập',
-        t.trien_khai || '',
-        t.tien_do || 'Hoàn thành',
-        '',
-        t.parent_task_id || null,
-        idx + 1
-      );
-    });
+      const stmtTask = db.prepare(`
+        INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index, file_minh_chung, file_original_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
 
-    (table2 || []).forEach((t, idx) => {
-      let cat = t.nhom || 'Thường xuyên';
-      if (cat.toLowerCase().includes('đột')) cat = 'Đột xuất';
-      else cat = 'Thường xuyên';
+      (table1 || []).forEach((t, idx) => {
+        let cat = t.nhom || 'Thường xuyên';
+        if (cat.toLowerCase().includes('đột')) cat = 'Đột xuất';
+        else cat = 'Thường xuyên';
 
-      stmtTask.run(
-        t.id || `t2_${targetReportId}_${idx}_${Date.now()}`,
-        targetReportId,
-        2,
-        cat,
-        t.noi_dung || '',
-        t.thoi_gian_du_kien || 'Trong tuần',
-        '',
-        '',
-        t.san_pham_du_kien || '',
-        t.parent_task_id || null,
-        idx + 1
-      );
-    });
+        // Generate guaranteed unique task ID to prevent PRIMARY KEY collisions
+        const uniqueTaskId = `t1_${targetReportId}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-    return res.json({ success: true, message: 'Đã lưu báo cáo thành công', report_id: targetReportId });
+        stmtTask.run(
+          uniqueTaskId,
+          targetReportId,
+          1,
+          cat,
+          t.noi_dung || '',
+          t.thoi_gian || 'Chưa nhập',
+          t.trien_khai || '',
+          t.tien_do || 'Hoàn thành',
+          t.san_pham || '',
+          t.parent_task_id || null,
+          idx + 1,
+          t.file_minh_chung || '',
+          t.file_original_name || ''
+        );
+      });
+
+      (table2 || []).forEach((t, idx) => {
+        let cat = t.nhom || 'Thường xuyên';
+        if (cat.toLowerCase().includes('đột')) cat = 'Đột xuất';
+        else cat = 'Thường xuyên';
+
+        // Generate guaranteed unique task ID to prevent PRIMARY KEY collisions
+        const uniqueTaskId = `t2_${targetReportId}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+        stmtTask.run(
+          uniqueTaskId,
+          targetReportId,
+          2,
+          cat,
+          t.noi_dung || '',
+          t.thoi_gian_du_kien || 'Trong tuần',
+          '',
+          '',
+          t.san_pham_du_kien || '',
+          t.parent_task_id || null,
+          idx + 1,
+          '',
+          ''
+        );
+      });
+
+      db.exec('COMMIT;');
+      return res.json({ success: true, message: 'Đã lưu báo cáo thành công', report_id: targetReportId });
+    } catch (txErr) {
+      db.exec('ROLLBACK;');
+      throw txErr;
+    }
   } catch (error) {
     console.error('Lỗi saveReport:', error);
     return res.status(500).json({ success: false, error: error.message });
@@ -451,7 +520,14 @@ export async function carryOverNextWeek(req, res) {
     const { department_id, current_week, current_year, account_id } = req.body;
     const currWeek = parseInt(current_week || '42', 10);
     const currYear = parseInt(current_year || '2026', 10);
-    const accId = account_id || 'acc_vp_hoa';
+    const accId = account_id;
+
+    if (!accId) {
+      return res.status(400).json({ success: false, error: 'Thiếu thông tin người dùng (account_id)' });
+    }
+
+    const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(accId);
+    const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
     const targetWeek = currWeek + 1;
     const targetYear = currYear;
@@ -461,11 +537,11 @@ export async function carryOverNextWeek(req, res) {
       SELECT * FROM reports WHERE account_id = ? AND week_number = ? AND year = ?
     `).get(accId, currWeek, currYear);
 
-    if (!currentReport) {
-      // Fallback search by department
+    if (!currentReport && isAdmin && department_id) {
+      // Fallback search by department cho ADMIN
       currentReport = db.prepare(`
         SELECT * FROM reports WHERE department_id = ? AND week_number = ? AND year = ?
-      `).get(department_id || 'dept_vp', currWeek, currYear);
+      `).get(department_id, currWeek, currYear);
     }
 
     if (!currentReport) {
@@ -656,6 +732,30 @@ export async function getReportShares(req, res) {
 }
 
 /**
+  * Upload File Minh Chứng
+  */
+export async function uploadEvidence(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Không tìm thấy file tải lên' });
+    }
+    const fileUrl = `/uploads/${req.file.filename}`;
+    return res.json({
+      success: true,
+      message: 'Upload file minh chứng thành công',
+      file: {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        url: fileUrl,
+        size: req.file.size
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
  * 9. Thu hồi quyền chia sẻ
  */
 export async function revokeReportShare(req, res) {
@@ -765,22 +865,46 @@ export async function generatePdf(req, res) {
 export async function getCandidateTasks(req, res) {
   try {
     const { department_id, account_id } = req.query;
-    const currentUserId = account_id || 'acc_vp_hoa';
+    const currentUserId = account_id;
+    if (!currentUserId) {
+      return res.json({ success: true, tasks: [] });
+    }
 
-    const tasks = db.prepare(`
-      SELECT t.*, r.week_number, r.year
-      FROM tasks t
-      JOIN reports r ON t.report_id = r.id
-      WHERE (r.account_id = ? OR r.department_id = ?)
-        AND (t.tien_do IS NULL OR (
-          t.tien_do NOT LIKE '%hoàn thành%'
-          AND t.tien_do NOT LIKE '%hủy%'
-          AND t.tien_do NOT LIKE '%kết thúc%'
-          AND t.tien_do NOT LIKE '%dừng%'
-        ))
-        AND LENGTH(TRIM(t.noi_dung)) > 0
-      ORDER BY r.year DESC, r.week_number DESC, t.order_index ASC
-    `).all(currentUserId, department_id || 'dept_vp');
+    const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId);
+    const isAdmin = currentUser && currentUser.role === 'ADMIN';
+
+    let tasks = [];
+    if (isAdmin && department_id) {
+      tasks = db.prepare(`
+        SELECT t.*, r.week_number, r.year
+        FROM tasks t
+        JOIN reports r ON t.report_id = r.id
+        WHERE (r.account_id = ? OR r.department_id = ?)
+          AND (t.tien_do IS NULL OR (
+            t.tien_do NOT LIKE '%hoàn thành%'
+            AND t.tien_do NOT LIKE '%hủy%'
+            AND t.tien_do NOT LIKE '%kết thúc%'
+            AND t.tien_do NOT LIKE '%dừng%'
+          ))
+          AND LENGTH(TRIM(t.noi_dung)) > 0
+        ORDER BY r.year DESC, r.week_number DESC, t.order_index ASC
+      `).all(currentUserId, department_id);
+    } else {
+      tasks = db.prepare(`
+        SELECT t.*, r.week_number, r.year
+        FROM tasks t
+        JOIN reports r ON t.report_id = r.id
+        WHERE r.account_id = ?
+          AND (t.tien_do IS NULL OR (
+            t.tien_do NOT LIKE '%hoàn thành%'
+            AND t.tien_do NOT LIKE '%hủy%'
+            AND t.tien_do NOT LIKE '%kết thúc%'
+            AND t.tien_do NOT LIKE '%dừng%'
+          ))
+          AND LENGTH(TRIM(t.noi_dung)) > 0
+        ORDER BY r.year DESC, r.week_number DESC, t.order_index ASC
+      `).all(currentUserId);
+    }
 
     return res.json({ success: true, tasks });
   } catch (error) {

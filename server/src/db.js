@@ -3,10 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (import.meta && import.meta.url ? path.dirname(fileURLToPath(import.meta.url)) : process.cwd());
 
-const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../data/weekly_report.db');
+const dbPath = process.env.DATABASE_PATH || path.join(currentDir, '../data/weekly_report.db');
 
 // Ensure data directory exists
 const dataDir = path.dirname(dbPath);
@@ -69,6 +70,8 @@ function initDatabase() {
       san_pham TEXT DEFAULT '',
       parent_task_id TEXT,
       order_index INTEGER DEFAULT 0,
+      file_minh_chung TEXT DEFAULT '',
+      file_original_name TEXT DEFAULT '',
       FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
     );
 
@@ -101,6 +104,71 @@ function initDatabase() {
   `);
 
   seedDefaultData();
+  migrateReportsTable();
+  migrateTasksTable();
+}
+
+function migrateTasksTable() {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all();
+    const hasFileMinhChung = tableInfo.some(col => col.name === 'file_minh_chung');
+    if (!hasFileMinhChung) {
+      console.log('🔄 Đang thêm cột file_minh_chung & file_original_name vào bảng tasks...');
+      db.exec("ALTER TABLE tasks ADD COLUMN file_minh_chung TEXT DEFAULT '';");
+      db.exec("ALTER TABLE tasks ADD COLUMN file_original_name TEXT DEFAULT '';");
+      console.log('✅ Đã cập nhật bảng tasks thành công!');
+    }
+  } catch (err) {
+    console.error('Lỗi khi migrate tasks table:', err);
+  }
+}
+
+/**
+ * Migration: Chuyển đổi ràng buộc duy nhất từ (department_id, week_number, year) sang (account_id, week_number, year)
+ * Đảm bảo mỗi tài khoản cá nhân có thể tạo báo cáo riêng độc lập trong cùng một phòng ban.
+ */
+function migrateReportsTable() {
+  try {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='reports'").get();
+    if (tableInfo && tableInfo.sql && tableInfo.sql.includes('department_id, week_number, year')) {
+      console.log('🔄 Đang nâng cấp CSDL: Chuyển sang UNIQUE(account_id, week_number, year)...');
+
+      db.exec('PRAGMA foreign_keys = OFF;');
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS reports_new (
+          id TEXT PRIMARY KEY,
+          department_id TEXT NOT NULL,
+          account_id TEXT NOT NULL,
+          week_number INTEGER NOT NULL,
+          year INTEGER NOT NULL,
+          status TEXT CHECK(status IN ('DRAFT', 'SUBMITTED', 'APPROVED')) DEFAULT 'DRAFT',
+          kho_khan TEXT DEFAULT 'Không',
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (department_id) REFERENCES departments(id),
+          FOREIGN KEY (account_id) REFERENCES accounts(id),
+          UNIQUE(account_id, week_number, year)
+        );
+      `);
+
+      db.exec('INSERT OR IGNORE INTO reports_new SELECT * FROM reports;');
+      db.exec('DROP TABLE reports;');
+      db.exec('ALTER TABLE reports_new RENAME TO reports;');
+
+      db.exec('PRAGMA foreign_keys = ON;');
+      console.log('✅ Nâng cấp CSDL reports thành công!');
+    }
+
+    // Add last_edited_by column if missing
+    const cols = db.prepare("PRAGMA table_info(reports)").all();
+    if (!cols.some(c => c.name === 'last_edited_by')) {
+      db.exec("ALTER TABLE reports ADD COLUMN last_edited_by TEXT DEFAULT '';");
+    }
+  } catch (err) {
+    console.error('Lỗi khi migrate reports table:', err);
+    try { db.exec('PRAGMA foreign_keys = ON;'); } catch (e) {}
+  }
 }
 
 /**

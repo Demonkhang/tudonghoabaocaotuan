@@ -4,6 +4,9 @@ export interface TaskTable1 {
   thoi_gian: string;
   trien_khai: string;
   tien_do: 'Hoàn thành' | 'Đang thực hiện' | 'Chưa thực hiện' | 'Hoàn thành trễ' | string;
+  san_pham?: string;
+  file_minh_chung?: string;
+  file_original_name?: string;
   nhom: 'Thường xuyên' | 'Đột xuất';
   isEdited?: boolean;
   originalData?: any;
@@ -129,19 +132,70 @@ export function isIgnoredRow(text: string): boolean {
   return false;
 }
 
+export function isRoutineTime(timeStr: string | undefined | null): boolean {
+  if (!timeStr) return true;
+  const lower = String(timeStr).toLowerCase().trim();
+  if (
+    lower.includes('thường xuyên') ||
+    lower.includes('thuong xuyen') ||
+    lower.includes('trong tuần') ||
+    lower.includes('trong tuan') ||
+    lower.includes('chưa nhập') ||
+    lower === ''
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function parseVietDate(str: string | undefined | null): number | null {
+  if (!str) return null;
+  const s = String(str).trim();
+  const match = s.match(/(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const rawYear = match[3];
+    const year = rawYear ? (rawYear.length === 2 ? 2000 + parseInt(rawYear, 10) : parseInt(rawYear, 10)) : 2026;
+    return new Date(year, month - 1, day).getTime();
+  }
+  return null;
+}
+
+export function sortTasksByTime<T extends { thoi_gian?: string; thoi_gian_du_kien?: string }>(tasks: T[]): T[] {
+  return [...tasks].sort((a, b) => {
+    const timeA = a.thoi_gian || a.thoi_gian_du_kien || '';
+    const timeB = b.thoi_gian || b.thoi_gian_du_kien || '';
+
+    const routineA = isRoutineTime(timeA);
+    const routineB = isRoutineTime(timeB);
+
+    if (!routineA && routineB) return -1;
+    if (routineA && !routineB) return 1;
+
+    if (!routineA && !routineB) {
+      const dateA = parseVietDate(timeA);
+      const dateB = parseVietDate(timeB);
+      if (dateA !== null && dateB !== null) {
+        return dateA - dateB;
+      }
+    }
+
+    return 0;
+  });
+}
+
 /**
- * BR07 & BR08: Tự động phân nhóm, đánh lại STT bắt đầu từ 1 & đếm số hoàn thành
+ * BR07 & BR08: Tự động phân nhóm, sắp xếp ngày ở trên, Thường xuyên ở dưới & đánh lại STT bắt đầu từ 1
  */
 export function processTable1(tasks: TaskTable1[]) {
   const cleanTasks = tasks.filter(t => !isIgnoredRow(t.noi_dung));
 
-  const thuongXuyen = cleanTasks
-    .filter(t => t.nhom === 'Thường xuyên')
-    .map((t, idx) => ({ ...t, stt: idx + 1 }));
+  const sortedTx = sortTasksByTime(cleanTasks.filter(t => t.nhom === 'Thường xuyên'));
+  const sortedDx = sortTasksByTime(cleanTasks.filter(t => t.nhom === 'Đột xuất'));
 
-  const dotXuat = cleanTasks
-    .filter(t => t.nhom === 'Đột xuất')
-    .map((t, idx) => ({ ...t, stt: idx + 1 }));
+  const thuongXuyen = sortedTx.map((t, idx) => ({ ...t, stt: idx + 1 }));
+  const dotXuat = sortedDx.map((t, idx) => ({ ...t, stt: idx + 1 }));
 
   const txDone = thuongXuyen.filter(t => t.tien_do === 'Hoàn thành').length;
   const dxDone = dotXuat.filter(t => t.tien_do === 'Hoàn thành').length;
@@ -158,13 +212,11 @@ export function processTable1(tasks: TaskTable1[]) {
 export function processTable2(tasks: TaskTable2[]) {
   const cleanTasks = tasks.filter(t => !isIgnoredRow(t.noi_dung));
 
-  const thuongXuyen = cleanTasks
-    .filter(t => t.nhom === 'Thường xuyên')
-    .map((t, idx) => ({ ...t, stt: idx + 1 }));
+  const sortedTx = sortTasksByTime(cleanTasks.filter(t => t.nhom === 'Thường xuyên'));
+  const sortedDx = sortTasksByTime(cleanTasks.filter(t => t.nhom === 'Đột xuất'));
 
-  const dotXuat = cleanTasks
-    .filter(t => t.nhom === 'Đột xuất')
-    .map((t, idx) => ({ ...t, stt: idx + 1 }));
+  const thuongXuyen = sortedTx.map((t, idx) => ({ ...t, stt: idx + 1 }));
+  const dotXuat = sortedDx.map((t, idx) => ({ ...t, stt: idx + 1 }));
 
   return {
     thuongXuyen,
@@ -240,4 +292,87 @@ export function validateReport(table1: TaskTable1[], table2: TaskTable2[]): Vali
   });
 
   return errors;
+}
+
+/**
+ * Chuyển đổi chuỗi ngày bất kỳ sang định dạng HTML input date (YYYY-MM-DD)
+ */
+export function toInputDate(rawDate?: string): string {
+  if (!rawDate || !rawDate.trim()) {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  const val = rawDate.trim();
+
+  // Tách lấy phần ngày trước khoảng trắng hoặc chữ 'T' (Ví dụ: "2026-09-17 08:53:51" -> "2026-09-17")
+  let cleanVal = val.split(' ')[0].split('T')[0];
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanVal)) {
+    return cleanVal;
+  }
+
+  if (cleanVal.includes('/')) {
+    const parts = cleanVal.split('/');
+    if (parts.length === 3) {
+      const d = parts[0].padStart(2, '0');
+      const m = parts[1].padStart(2, '0');
+      const y = parts[2];
+      if (!isNaN(Number(d)) && !isNaN(Number(m)) && !isNaN(Number(y))) {
+        return `${y}-${m}-${d}`;
+      }
+    }
+  }
+
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const d = String(today.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Định dạng Ngày lập báo cáo chuẩn thể thức văn bản hành chính (NĐ 30/2020/NĐ-CP)
+ */
+export function formatNgayLap(rawDate?: string): string {
+  if (!rawDate || !rawDate.trim()) {
+    const now = new Date();
+    return `Thành phố Hồ Chí Minh, ngày ${now.getDate()} tháng ${now.getMonth() + 1} năm ${now.getFullYear()}`;
+  }
+
+  const val = rawDate.trim();
+  if (val.toLowerCase().startsWith('thành phố')) return val;
+  if (val.toLowerCase().startsWith('ngày') || val.toLowerCase().includes('tháng')) {
+    return `Thành phố Hồ Chí Minh, ${val}`;
+  }
+
+  // Tách lấy phần ngày trước khoảng trắng hoặc chữ 'T'
+  let cleanVal = val.split(' ')[0].split('T')[0];
+
+  if (cleanVal.includes('/')) {
+    const parts = cleanVal.split('/');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const year = parts[2];
+      if (!isNaN(day) && !isNaN(month)) {
+        return `Thành phố Hồ Chí Minh, ngày ${day} tháng ${month} năm ${year}`;
+      }
+    }
+  } else if (cleanVal.includes('-')) {
+    const parts = cleanVal.split('-');
+    if (parts.length === 3) {
+      const year = parts[0];
+      const month = parseInt(parts[1], 10);
+      const day = parseInt(parts[2], 10);
+      if (!isNaN(day) && !isNaN(month)) {
+        return `Thành phố Hồ Chí Minh, ngày ${day} tháng ${month} năm ${year}`;
+      }
+    }
+  }
+
+  return `Thành phố Hồ Chí Minh, ${val}`;
 }

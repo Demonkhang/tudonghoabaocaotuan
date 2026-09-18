@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tailwind CSS v4 Class-based Dark Mode */
+@variant dark (&:where(.dark, .dark *));
+
 /* -------------------------------------------------------------------------- */
 /* CHẾ ĐỘ IN ẤN XUẤT PDF CHUẨN NGHỊ ĐỊNH 30/2020/NĐ-CP                        */
 /* -------------------------------------------------------------------------- */
@@ -13,3 +16,4 @@
     background: #ffffff !important;
   }
 }
+

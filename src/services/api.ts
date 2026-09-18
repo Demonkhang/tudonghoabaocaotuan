@@ -3,6 +3,7 @@
  */
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
+import { sortTasksByTime } from '../utils/reportUtils';
 
 export async function fetchSyncedData() {
   try {
@@ -352,14 +353,17 @@ function formatDataForTemplate(data: any) {
     return noiDung.trim().length > 0 && !isIgnoredRow(noiDung);
   });
 
-  const tx1 = cleanTable1.filter((t: any) => {
+  const tx1Raw = cleanTable1.filter((t: any) => {
     const nhom = t.nhom || classifyTask(t.noi_dung || t.noiDung);
     return nhom === 'Thường xuyên' || String(nhom).toLowerCase().includes('thường xuyên');
   });
-  const dx1 = cleanTable1.filter((t: any) => {
+  const dx1Raw = cleanTable1.filter((t: any) => {
     const nhom = t.nhom || classifyTask(t.noi_dung || t.noiDung);
     return nhom === 'Đột xuất' || String(nhom).toLowerCase().includes('đột xuất');
   });
+
+  const tx1 = sortTasksByTime(tx1Raw);
+  const dx1 = sortTasksByTime(dx1Raw);
 
   const thuongxuyen_ketqua = tx1.map((item: any, idx: number) => ({
     stt: idx + 1,
@@ -383,14 +387,17 @@ function formatDataForTemplate(data: any) {
     return noiDung.trim().length > 0 && !isIgnoredRow(noiDung);
   });
 
-  const tx2 = cleanTable2.filter((t: any) => {
+  const tx2Raw = cleanTable2.filter((t: any) => {
     const nhom = t.nhom || classifyTask(t.noi_dung || t.noiDung);
     return nhom === 'Thường xuyên' || String(nhom).toLowerCase().includes('thường xuyên');
   });
-  const dx2 = cleanTable2.filter((t: any) => {
+  const dx2Raw = cleanTable2.filter((t: any) => {
     const nhom = t.nhom || classifyTask(t.noi_dung || t.noiDung);
     return nhom === 'Đột xuất' || String(nhom).toLowerCase().includes('đột xuất');
   });
+
+  const tx2 = sortTasksByTime(tx2Raw);
+  const dx2 = sortTasksByTime(dx2Raw);
 
   const thuongxuyen_kehoach = tx2.map((item: any, idx: number) => ({
     stt: idx + 1,
@@ -419,7 +426,7 @@ function formatDataForTemplate(data: any) {
     tuan: metadata.tuan || 42,
     tuan_tiep: metadata.tuan_tiep || (metadata.tuan ? metadata.tuan + 1 : 43),
     ngay_lap: formatNgayLap(metadata.ngay_lap),
-    nguoi_lap: metadata.nguoi_lap || 'Trần Thuận Hóa',
+    nguoi_lap: metadata.nguoi_lap || '',
     kho_khan: metadata.kho_khan || 'Không',
 
     tong_nhiem_vu: totalT1,
@@ -543,7 +550,6 @@ function createDocxZipTemplate() {
       </w:tblGrid>
       <!-- HEADER ROW -->
       <w:tr>
-        <w:trPr><w:tblHeader/></w:trPr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/></w:tcPr>
           <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>STT</w:t></w:r></w:p>
@@ -676,7 +682,6 @@ function createDocxZipTemplate() {
       </w:tblGrid>
       <!-- HEADER ROW -->
       <w:tr>
-        <w:trPr><w:tblHeader/></w:trPr>
         <w:tc>
           <w:tcPr><w:tcW w:w="600" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/></w:tcPr>
           <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>STT</w:t></w:r></w:p>

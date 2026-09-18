@@ -18,10 +18,10 @@ export const ValidationPanel: React.FC<ValidationPanelProps> = ({
   const completionPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
-    <aside className="col-span-12 lg:col-span-3 border-l border-[#c1c6d4] bg-[#f2f3fc] p-4 flex flex-col gap-4 sticky top-[125px] h-[calc(100vh-125px)] overflow-y-auto">
+    <aside className="col-span-12 lg:col-span-3 border-l border-[#c1c6d4] dark:border-slate-800 bg-[#f2f3fc] dark:bg-slate-900 p-4 flex flex-col gap-4 sticky top-[125px] h-[calc(100vh-125px)] overflow-y-auto transition-colors duration-300">
       {/* Header Panel */}
-      <div className="flex items-center justify-between pb-2 border-b border-[#c1c6d4]">
-        <h3 className="font-semibold text-base flex items-center gap-2 text-slate-800">
+      <div className="flex items-center justify-between pb-2 border-b border-[#c1c6d4] dark:border-slate-800">
+        <h3 className="font-semibold text-base flex items-center gap-2 text-slate-800 dark:text-slate-100">
           <AlertTriangle className="w-5 h-5 text-red-600" />
           <span>Kiểm tra dữ liệu</span>
         </h3>

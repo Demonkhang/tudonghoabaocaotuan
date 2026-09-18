@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Plus, Trash2, ClipboardList, ArrowRight } from 'lucide-react';
+import { Pencil, Plus, Trash2, ClipboardList, ArrowRight, Eye, Edit3, Paperclip } from 'lucide-react';
 import { TaskTable1, TaskTable2, processTable1, processTable2, classifyTask } from '../utils/reportUtils';
 
 interface TableEditorProps {
@@ -12,6 +12,10 @@ interface TableEditorProps {
   tuanTiep: number;
   nam: number;
   isReadOnly?: boolean;
+  onOpenProofModal?: (row: TaskTable1) => void;
+  onOpenDetailModal?: (row: TaskTable1, mode: 'view' | 'edit') => void;
+  onClearTable1?: () => void;
+  onClearTable2?: () => void;
 }
 
 export const TableEditor: React.FC<TableEditorProps> = ({
@@ -23,24 +27,35 @@ export const TableEditor: React.FC<TableEditorProps> = ({
   tuan,
   tuanTiep,
   nam,
-  isReadOnly = false
+  isReadOnly = false,
+  onOpenProofModal,
+  onOpenDetailModal,
+  onClearTable1,
+  onClearTable2
 }) => {
   const p1 = processTable1(table1);
   const p2 = processTable2(table2);
 
   // Cập nhật trường dữ liệu Bảng 1
   const updateTable1Field = (id: string, field: keyof TaskTable1, value: any) => {
+    const item = table1.find(t => t.id === id);
+    if (field === 'tien_do' && value === 'Hoàn thành' && item && !item.file_minh_chung && !item.san_pham) {
+      if (onOpenProofModal) {
+        onOpenProofModal(item);
+        return;
+      }
+    }
+
     setTable1(prev =>
-      prev.map(item => {
-        if (item.id === id) {
-          const updated = { ...item, [field]: value, isEdited: true };
-          // Nếu đổi nội dung, tự phân loại nhóm (BR03)
+      prev.map(it => {
+        if (it.id === id) {
+          const updated = { ...it, [field]: value, isEdited: true };
           if (field === 'noi_dung') {
             updated.nhom = classifyTask(value);
           }
           return updated;
         }
-        return item;
+        return it;
       })
     );
   };
@@ -101,23 +116,34 @@ export const TableEditor: React.FC<TableEditorProps> = ({
   };
 
   return (
-    <section className="col-span-12 lg:col-span-9 overflow-y-auto p-6 bg-[#f9f9ff] space-y-6 scroll-smooth pb-16">
+    <section className="col-span-12 lg:col-span-9 overflow-y-auto p-6 bg-[#f9f9ff] dark:bg-slate-900 space-y-6 scroll-smooth pb-16 transition-colors duration-300">
       {/* ==================== BẢNG I ==================== */}
-      <div className="bg-white rounded-xl shadow-xs border border-[#c1c6d4] overflow-hidden">
-        <div className="bg-[#cbe6ff] px-6 py-3 border-b border-[#c1c6d4] flex justify-between items-center">
-          <h2 className="font-semibold text-lg text-[#001e30] flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-[#005dac]" />
+      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-[#c1c6d4] dark:border-slate-800 overflow-hidden">
+        <div className="bg-[#cbe6ff] dark:bg-slate-800 px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center">
+          <h2 className="font-bold text-lg text-[#001e30] dark:text-blue-300 flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-[#005dac] dark:text-blue-400" />
             <span>BẢNG I: KẾT QUẢ THỰC HIỆN CÔNG TÁC</span>
           </h2>
-          <span className="text-xs uppercase font-bold tracking-wider text-[#4e677c]">
-            Tuần {tuan} / {nam}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs uppercase font-extrabold tracking-wider text-[#4e677c] dark:text-slate-300">
+              Tuần {tuan} / {nam}
+            </span>
+            {!isReadOnly && table1.length > 0 && onClearTable1 && (
+              <button
+                onClick={onClearTable1}
+                className="text-xs font-bold text-red-600 dark:text-red-400 bg-white/80 dark:bg-slate-700/80 hover:bg-red-50 dark:hover:bg-red-950/60 px-2.5 py-1 rounded border border-red-200 dark:border-red-900 transition-all flex items-center gap-1 cursor-pointer"
+                title="Xóa nhanh tất cả nhiệm vụ Bảng I"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Xóa Bảng I
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
-            <thead className="bg-[#e6e8f0]">
-              <tr className="text-xs uppercase text-[#414752] font-semibold border-b border-[#c1c6d4]">
+            <thead className="bg-[#e6e8f0] dark:bg-slate-800/90">
+              <tr className="text-xs uppercase text-[#414752] dark:text-slate-300 font-bold border-b border-[#c1c6d4] dark:border-slate-700">
                 <th className="px-4 py-3 w-12 text-center">STT</th>
                 <th className="px-4 py-3">Nội dung nhiệm vụ</th>
                 <th className="px-4 py-3 w-40">Thời gian hoàn thành</th>
@@ -128,15 +154,15 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             </thead>
             <tbody className="text-sm">
               {/* NHÓM I: THƯỜNG XUYÊN */}
-              <tr className="bg-[#f2f3fc]">
-                <td colSpan={6} className="px-4 py-2 font-bold text-[#005dac] border-b border-[#c1c6d4]">
+              <tr className="bg-[#f2f3fc] dark:bg-slate-800/50">
+                <td colSpan={6} className="px-4 py-2 font-extrabold text-[#005dac] dark:text-blue-300 border-b border-[#c1c6d4] dark:border-slate-700">
                   <div className="flex justify-between items-center">
                     <span>
                       I. Nhiệm vụ thường xuyên ({p1.txStats.done}/{p1.txStats.total} nhiệm vụ hoàn thành)
                     </span>
                     <button
                       onClick={() => addTable1Row('Thường xuyên')}
-                      className="text-xs font-semibold text-[#005dac] bg-white px-2.5 py-1 rounded border border-[#005dac]/30 hover:bg-[#005dac] hover:text-white transition-all flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-semibold text-[#005dac] dark:text-blue-300 bg-white dark:bg-slate-700 px-2.5 py-1 rounded border border-[#005dac]/30 dark:border-slate-600 hover:bg-[#005dac] dark:hover:bg-blue-600 hover:text-white dark:hover:text-white transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" /> Thêm nhiệm vụ
                     </button>
@@ -148,15 +174,15 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 <tr
                   key={row.id}
                   id={`row_${row.id}`}
-                  className={`border-b border-[#c1c6d4] transition-colors group ${
+                  className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-colors group ${
                     highlightedRowId === row.id
-                      ? 'bg-amber-100 ring-2 ring-amber-500'
+                      ? 'bg-amber-100 dark:bg-amber-950/70 ring-2 ring-amber-500'
                       : row.thoi_gian === 'Chưa nhập'
-                      ? 'bg-red-50/70 hover:bg-red-100/80'
-                      : 'hover:bg-[#f2f3fc]'
+                      ? 'bg-red-50/70 dark:bg-red-950/40 hover:bg-red-100/80 dark:hover:bg-red-900/50'
+                      : 'hover:bg-[#f2f3fc] dark:hover:bg-slate-800/40'
                   }`}
                 >
-                  <td className="px-4 py-3 text-center font-bold text-[#414752]">{row.stt}</td>
+                  <td className="px-4 py-3 text-center font-bold text-[#414752] dark:text-slate-300">{row.stt}</td>
                   
                   {/* Nội dung Inline Edit */}
                   <td className="px-4 py-3 relative">
@@ -165,10 +191,10 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                         type="text"
                         value={row.noi_dung}
                         onChange={e => updateTable1Field(row.id, 'noi_dung', e.target.value)}
-                        className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#005dac] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-800 font-medium"
+                        className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium"
                       />
                       {row.isEdited && (
-                        <span className="flex items-center text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold shrink-0 border border-amber-300" title="Đã sửa (BR12)">
+                        <span className="flex items-center text-[10px] bg-amber-100 dark:bg-amber-950 dark:text-amber-300 text-amber-800 px-1.5 py-0.5 rounded font-bold shrink-0 border border-amber-300 dark:border-amber-700" title="Đã sửa">
                           <Pencil className="w-3 h-3 mr-0.5" /> Đã sửa
                         </span>
                       )}
@@ -181,8 +207,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       type="text"
                       value={row.thoi_gian}
                       onChange={e => updateTable1Field(row.id, 'thoi_gian', e.target.value)}
-                      className={`w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#005dac] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded ${
-                        row.thoi_gian === 'Chưa nhập' ? 'text-red-600 font-semibold italic' : 'text-slate-700'
+                      className={`w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded ${
+                        row.thoi_gian === 'Chưa nhập' ? 'text-red-600 dark:text-red-400 font-semibold italic' : 'text-slate-700 dark:text-slate-200'
                       }`}
                     />
                   </td>
@@ -193,7 +219,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       type="text"
                       value={row.trien_khai}
                       onChange={e => updateTable1Field(row.id, 'trien_khai', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#005dac] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-700"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-700 dark:text-slate-200 font-medium"
                     />
                   </td>
 
@@ -204,43 +230,71 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       onChange={e => updateTable1Field(row.id, 'tien_do', e.target.value)}
                       className={`text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer focus:outline-hidden border-none ${
                         row.tien_do === 'Hoàn thành'
-                          ? 'bg-emerald-600 text-white'
+                          ? 'bg-emerald-600 text-white dark:bg-emerald-600'
                           : row.tien_do === 'Đang thực hiện'
-                          ? 'bg-[#005dac] text-white'
+                          ? 'bg-[#005dac] text-white dark:bg-blue-600'
                           : row.tien_do === 'Hoàn thành trễ'
-                          ? 'bg-amber-600 text-white'
-                          : 'bg-slate-500 text-white'
+                          ? 'bg-amber-600 text-white dark:bg-amber-600'
+                          : 'bg-slate-500 text-white dark:bg-slate-600'
                       }`}
                     >
-                      <option value="Hoàn thành" className="bg-white text-slate-800 font-medium">Hoàn thành</option>
-                      <option value="Đang thực hiện" className="bg-white text-slate-800 font-medium">Đang thực hiện</option>
-                      <option value="Hoàn thành trễ" className="bg-white text-slate-800 font-medium">Hoàn thành trễ</option>
-                      <option value="Chưa thực hiện" className="bg-white text-slate-800 font-medium">Chưa thực hiện</option>
+                      <option value="Hoàn thành" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành</option>
+                      <option value="Đang thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Đang thực hiện</option>
+                      <option value="Hoàn thành trễ" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành trễ</option>
+                      <option value="Chưa thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Chưa thực hiện</option>
                     </select>
                   </td>
 
                   <td className="px-3 py-3 text-center">
-                    <button
-                      onClick={() => deleteTable1Row(row.id)}
-                      className="text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
-                      title="Xóa dòng này"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      {row.file_minh_chung && (
+                        <span title={`File minh chứng: ${row.file_original_name || 'Đã đính kèm'}`}>
+                          <Paperclip className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        </span>
+                      )}
+
+                      {row.tien_do === 'Hoàn thành' ? (
+                        <button
+                          onClick={() => onOpenDetailModal?.(row, 'view')}
+                          className="p-1 text-[#005dac] dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 rounded cursor-pointer transition-all"
+                          title="Xem chi tiết nhiệm vụ & Tải file minh chứng"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onOpenDetailModal?.(row, 'edit')}
+                          className="p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer transition-all"
+                          title="Chỉnh sửa chi tiết nhiệm vụ"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {!isReadOnly && (
+                        <button
+                          onClick={() => deleteTable1Row(row.id)}
+                          className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+                          title="Xóa dòng này"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
 
               {/* NHÓM II: ĐỘT XUẤT */}
-              <tr className="bg-[#f2f3fc]">
-                <td colSpan={6} className="px-4 py-2 font-bold text-[#005dac] border-b border-[#c1c6d4]">
+              <tr className="bg-[#f2f3fc] dark:bg-slate-800/50">
+                <td colSpan={6} className="px-4 py-2 font-extrabold text-[#005dac] dark:text-blue-300 border-b border-[#c1c6d4] dark:border-slate-700">
                   <div className="flex justify-between items-center">
                     <span>
                       II. Nhiệm vụ đột xuất ({p1.dxStats.done}/{p1.dxStats.total} nhiệm vụ hoàn thành)
                     </span>
                     <button
                       onClick={() => addTable1Row('Đột xuất')}
-                      className="text-xs font-semibold text-[#005dac] bg-white px-2.5 py-1 rounded border border-[#005dac]/30 hover:bg-[#005dac] hover:text-white transition-all flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-semibold text-[#005dac] dark:text-blue-300 bg-white dark:bg-slate-700 px-2.5 py-1 rounded border border-[#005dac]/30 dark:border-slate-600 hover:bg-[#005dac] dark:hover:bg-blue-600 hover:text-white dark:hover:text-white transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" /> Thêm nhiệm vụ
                     </button>
@@ -252,13 +306,13 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 <tr
                   key={row.id}
                   id={`row_${row.id}`}
-                  className={`border-b border-[#c1c6d4] transition-colors group ${
+                  className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-colors group ${
                     highlightedRowId === row.id
-                      ? 'bg-amber-100 ring-2 ring-amber-500'
-                      : 'hover:bg-[#f2f3fc]'
+                      ? 'bg-amber-100 dark:bg-amber-950/70 ring-2 ring-amber-500'
+                      : 'hover:bg-[#f2f3fc] dark:hover:bg-slate-800/40'
                   }`}
                 >
-                  <td className="px-4 py-3 text-center font-bold text-[#414752]">{row.stt}</td>
+                  <td className="px-4 py-3 text-center font-bold text-[#414752] dark:text-slate-300">{row.stt}</td>
                   
                   <td className="px-4 py-3 relative">
                     <div className="flex items-center gap-1.5">
@@ -266,10 +320,10 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                         type="text"
                         value={row.noi_dung}
                         onChange={e => updateTable1Field(row.id, 'noi_dung', e.target.value)}
-                        className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#005dac] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-800 font-medium"
+                        className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium"
                       />
                       {row.isEdited && (
-                        <span className="flex items-center text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold shrink-0 border border-amber-300" title="Đã sửa">
+                        <span className="flex items-center text-[10px] bg-amber-100 dark:bg-amber-950 dark:text-amber-300 text-amber-800 px-1.5 py-0.5 rounded font-bold shrink-0 border border-amber-300 dark:border-amber-700" title="Đã sửa">
                           <Pencil className="w-3 h-3 mr-0.5" /> Đã sửa
                         </span>
                       )}
@@ -281,7 +335,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       type="text"
                       value={row.thoi_gian}
                       onChange={e => updateTable1Field(row.id, 'thoi_gian', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#005dac] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-700"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-700 dark:text-slate-200"
                     />
                   </td>
 
@@ -290,7 +344,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       type="text"
                       value={row.trien_khai}
                       onChange={e => updateTable1Field(row.id, 'trien_khai', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#005dac] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-700"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-700 dark:text-slate-200"
                     />
                   </td>
 
@@ -300,28 +354,57 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       onChange={e => updateTable1Field(row.id, 'tien_do', e.target.value)}
                       className={`text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer focus:outline-hidden border-none ${
                         row.tien_do === 'Hoàn thành'
-                          ? 'bg-emerald-600 text-white'
+                          ? 'bg-emerald-600 text-white dark:bg-emerald-600'
                           : row.tien_do === 'Đang thực hiện'
-                          ? 'bg-[#005dac] text-white'
+                          ? 'bg-[#005dac] text-white dark:bg-blue-600'
                           : row.tien_do === 'Hoàn thành trễ'
-                          ? 'bg-amber-600 text-white'
-                          : 'bg-slate-500 text-white'
+                          ? 'bg-amber-600 text-white dark:bg-amber-600'
+                          : 'bg-slate-500 text-white dark:bg-slate-600'
                       }`}
                     >
-                      <option value="Hoàn thành" className="bg-white text-slate-800">Hoàn thành</option>
-                      <option value="Đang thực hiện" className="bg-white text-slate-800">Đang thực hiện</option>
-                      <option value="Hoàn thành trễ" className="bg-white text-slate-800">Hoàn thành trễ</option>
-                      <option value="Chưa thực hiện" className="bg-white text-slate-800">Chưa thực hiện</option>
+                      <option value="Hoàn thành" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành</option>
+                      <option value="Đang thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Đang thực hiện</option>
+                      <option value="Hoàn thành trễ" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành trễ</option>
+                      <option value="Chưa thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Chưa thực hiện</option>
                     </select>
                   </td>
 
                   <td className="px-3 py-3 text-center">
-                    <button
-                      onClick={() => deleteTable1Row(row.id)}
-                      className="text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      {row.file_minh_chung && (
+                        <span title={`File minh chứng: ${row.file_original_name || 'Đã đính kèm'}`}>
+                          <Paperclip className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        </span>
+                      )}
+
+                      {row.tien_do === 'Hoàn thành' ? (
+                        <button
+                          onClick={() => onOpenDetailModal?.(row, 'view')}
+                          className="p-1 text-[#005dac] dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 rounded cursor-pointer transition-all"
+                          title="Xem chi tiết nhiệm vụ & Tải file minh chứng"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onOpenDetailModal?.(row, 'edit')}
+                          className="p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded cursor-pointer transition-all"
+                          title="Chỉnh sửa chi tiết nhiệm vụ"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {!isReadOnly && (
+                        <button
+                          onClick={() => deleteTable1Row(row.id)}
+                          className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+                          title="Xóa dòng này"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -331,21 +414,32 @@ export const TableEditor: React.FC<TableEditorProps> = ({
       </div>
 
       {/* ==================== BẢNG II ==================== */}
-      <div className="bg-white rounded-xl shadow-xs border border-[#c1c6d4] overflow-hidden">
-        <div className="bg-[#ffdbc7] px-6 py-3 border-b border-[#c1c6d4] flex justify-between items-center">
-          <h2 className="font-semibold text-lg text-[#311300] flex items-center gap-2">
-            <ArrowRight className="w-5 h-5 text-[#ba5b00]" />
+      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-[#c1c6d4] dark:border-slate-800 overflow-hidden">
+        <div className="bg-[#ffdbc7] dark:bg-gradient-to-r dark:from-amber-950/60 dark:to-slate-800 px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center">
+          <h2 className="font-bold text-lg text-[#311300] dark:text-amber-300 flex items-center gap-2">
+            <ArrowRight className="w-5 h-5 text-[#ba5b00] dark:text-amber-400" />
             <span>BẢNG II: KẾ HOẠCH THỰC HIỆN TUẦN TIẾP THEO</span>
           </h2>
-          <span className="text-xs uppercase font-bold tracking-wider text-[#733600]">
-            Tuần {tuanTiep} / {nam}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs uppercase font-extrabold tracking-wider text-[#733600] dark:text-amber-300/80">
+              Tuần {tuanTiep} / {nam}
+            </span>
+            {!isReadOnly && table2.length > 0 && onClearTable2 && (
+              <button
+                onClick={onClearTable2}
+                className="text-xs font-bold text-red-600 dark:text-red-400 bg-white/80 dark:bg-slate-700/80 hover:bg-red-50 dark:hover:bg-red-950/60 px-2.5 py-1 rounded border border-red-200 dark:border-red-900 transition-all flex items-center gap-1 cursor-pointer"
+                title="Xóa nhanh tất cả kế hoạch Bảng II"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Xóa Bảng II
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
-            <thead className="bg-[#e6e8f0]">
-              <tr className="text-xs uppercase text-[#414752] font-semibold border-b border-[#c1c6d4]">
+            <thead className="bg-[#e6e8f0] dark:bg-slate-800/90">
+              <tr className="text-xs uppercase text-[#414752] dark:text-slate-300 font-bold border-b border-[#c1c6d4] dark:border-slate-700">
                 <th className="px-4 py-3 w-12 text-center">STT</th>
                 <th className="px-4 py-3">Nhiệm vụ/Công tác</th>
                 <th className="px-4 py-3 w-40">Thời gian dự kiến</th>
@@ -355,13 +449,13 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             </thead>
             <tbody className="text-sm">
               {/* NHÓM I: THƯỜNG XUYÊN */}
-              <tr className="bg-[#fff3ec]">
-                <td colSpan={5} className="px-4 py-2 font-bold text-[#ba5b00] border-b border-[#c1c6d4]">
+              <tr className="bg-[#fff3ec] dark:bg-amber-950/20">
+                <td colSpan={5} className="px-4 py-2 font-extrabold text-[#ba5b00] dark:text-amber-400 border-b border-[#c1c6d4] dark:border-slate-700">
                   <div className="flex justify-between items-center">
                     <span>I. Nhiệm vụ thường xuyên ({p2.txTotal} kế hoạch)</span>
                     <button
                       onClick={() => addTable2Row('Thường xuyên')}
-                      className="text-xs font-semibold text-[#ba5b00] bg-white px-2.5 py-1 rounded border border-[#ba5b00]/30 hover:bg-[#ba5b00] hover:text-white transition-all flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-semibold text-[#ba5b00] dark:text-amber-300 bg-white dark:bg-slate-800 px-2.5 py-1 rounded border border-[#ba5b00]/30 dark:border-amber-700/50 hover:bg-[#ba5b00] dark:hover:bg-amber-600 hover:text-white dark:hover:text-white transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" /> Thêm kế hoạch
                     </button>
@@ -373,20 +467,20 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 <tr
                   key={row.id}
                   id={`row_${row.id}`}
-                  className={`border-b border-[#c1c6d4] transition-colors ${
+                  className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-colors ${
                     highlightedRowId === row.id
-                      ? 'bg-amber-100 ring-2 ring-amber-500'
-                      : 'hover:bg-[#f2f3fc]'
+                      ? 'bg-amber-100 dark:bg-amber-950/70 ring-2 ring-amber-500'
+                      : 'hover:bg-[#f2f3fc] dark:hover:bg-slate-800/40'
                   }`}
                 >
-                  <td className="px-4 py-3 text-center font-bold text-[#414752]">{row.stt}</td>
+                  <td className="px-4 py-3 text-center font-bold text-[#414752] dark:text-slate-300">{row.stt}</td>
                   
                   <td className="px-4 py-3">
                     <input
                       type="text"
                       value={row.noi_dung}
                       onChange={e => updateTable2Field(row.id, 'noi_dung', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#ba5b00] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-800 font-medium"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#ba5b00] dark:focus:border-amber-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium"
                     />
                   </td>
 
@@ -395,7 +489,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       type="text"
                       value={row.thoi_gian_du_kien}
                       onChange={e => updateTable2Field(row.id, 'thoi_gian_du_kien', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#ba5b00] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-700"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#ba5b00] dark:focus:border-amber-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-700 dark:text-slate-200"
                     />
                   </td>
 
@@ -404,14 +498,14 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       type="text"
                       value={row.san_pham_du_kien}
                       onChange={e => updateTable2Field(row.id, 'san_pham_du_kien', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#ba5b00] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-700"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#ba5b00] dark:focus:border-amber-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-700 dark:text-slate-200 font-medium"
                     />
                   </td>
 
                   <td className="px-3 py-3 text-center">
                     <button
                       onClick={() => deleteTable2Row(row.id)}
-                      className="text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                      className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -420,13 +514,13 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               ))}
 
               {/* NHÓM II: ĐỘT XUẤT */}
-              <tr className="bg-[#fff3ec]">
-                <td colSpan={5} className="px-4 py-2 font-bold text-[#ba5b00] border-b border-[#c1c6d4]">
+              <tr className="bg-[#fff3ec] dark:bg-amber-950/20">
+                <td colSpan={5} className="px-4 py-2 font-extrabold text-[#ba5b00] dark:text-amber-400 border-b border-[#c1c6d4] dark:border-slate-700">
                   <div className="flex justify-between items-center">
                     <span>II. Nhiệm vụ đột xuất ({p2.dxTotal} kế hoạch)</span>
                     <button
                       onClick={() => addTable2Row('Đột xuất')}
-                      className="text-xs font-semibold text-[#ba5b00] bg-white px-2.5 py-1 rounded border border-[#ba5b00]/30 hover:bg-[#ba5b00] hover:text-white transition-all flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-semibold text-[#ba5b00] dark:text-amber-300 bg-white dark:bg-slate-800 px-2.5 py-1 rounded border border-[#ba5b00]/30 dark:border-amber-700/50 hover:bg-[#ba5b00] dark:hover:bg-amber-600 hover:text-white dark:hover:text-white transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" /> Thêm kế hoạch
                     </button>
@@ -438,20 +532,20 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 <tr
                   key={row.id}
                   id={`row_${row.id}`}
-                  className={`border-b border-[#c1c6d4] transition-colors ${
+                  className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-colors ${
                     highlightedRowId === row.id
-                      ? 'bg-amber-100 ring-2 ring-amber-500'
-                      : 'hover:bg-[#f2f3fc]'
+                      ? 'bg-amber-100 dark:bg-amber-950/70 ring-2 ring-amber-500'
+                      : 'hover:bg-[#f2f3fc] dark:hover:bg-slate-800/40'
                   }`}
                 >
-                  <td className="px-4 py-3 text-center font-bold text-[#414752]">{row.stt}</td>
+                  <td className="px-4 py-3 text-center font-bold text-[#414752] dark:text-slate-300">{row.stt}</td>
                   
                   <td className="px-4 py-3">
                     <input
                       type="text"
                       value={row.noi_dung}
                       onChange={e => updateTable2Field(row.id, 'noi_dung', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#ba5b00] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-800 font-medium"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#ba5b00] dark:focus:border-amber-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium"
                     />
                   </td>
 
@@ -460,7 +554,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       type="text"
                       value={row.thoi_gian_du_kien}
                       onChange={e => updateTable2Field(row.id, 'thoi_gian_du_kien', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#ba5b00] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-700"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#ba5b00] dark:focus:border-amber-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-700 dark:text-slate-200"
                     />
                   </td>
 
@@ -469,14 +563,14 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       type="text"
                       value={row.san_pham_du_kien}
                       onChange={e => updateTable2Field(row.id, 'san_pham_du_kien', e.target.value)}
-                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] focus:border-[#ba5b00] focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-slate-700"
+                      className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#ba5b00] dark:focus:border-amber-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-700 dark:text-slate-200 font-medium"
                     />
                   </td>
 
                   <td className="px-3 py-3 text-center">
                     <button
                       onClick={() => deleteTable2Row(row.id)}
-                      className="text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                      className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

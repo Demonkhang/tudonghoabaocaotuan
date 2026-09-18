@@ -1,10 +1,34 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 
 // Import controllers & db
 import * as reportController from './server/src/controllers/reportController.js';
+
+// Ensure uploads directory exists for Docker volume persistence
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniquePrefix = Date.now() + '_' + Math.round(Math.random() * 1e9);
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    cb(null, `${uniquePrefix}_${safeName}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+});
 
 async function startServer() {
   const app = express();
@@ -12,6 +36,12 @@ async function startServer() {
 
   app.use(cors());
   app.use(express.json());
+
+  // Static uploads serving for proof of completion files
+  app.use('/uploads', express.static(uploadsDir));
+
+  // File Upload Endpoint
+  app.post('/api/upload-evidence', upload.single('file'), reportController.uploadEvidence);
 
   // API Endpoints - Auth & Departments
   app.post('/api/auth/login', reportController.login);

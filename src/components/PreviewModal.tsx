@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { X, FileSpreadsheet, Printer } from 'lucide-react';
-import { TaskTable1, TaskTable2, ReportMetadata, processTable1, processTable2 } from '../utils/reportUtils';
+import { TaskTable1, TaskTable2, ReportMetadata, processTable1, processTable2, formatNgayLap, toInputDate } from '../utils/reportUtils';
 
 interface PreviewModalProps {
   isOpen: boolean;
@@ -8,45 +8,8 @@ interface PreviewModalProps {
   table1: TaskTable1[];
   table2: TaskTable2[];
   metadata: ReportMetadata;
+  setMetadata?: React.Dispatch<React.SetStateAction<ReportMetadata>>;
   onDownloadWord: () => void;
-}
-
-function formatNgayLap(rawDate?: string): string {
-  if (!rawDate || !rawDate.trim()) {
-    const now = new Date();
-    return `Thành phố Hồ Chí Minh, ngày ${now.getDate()} tháng ${now.getMonth() + 1} năm ${now.getFullYear()}`;
-  }
-
-  const val = rawDate.trim();
-  if (val.toLowerCase().startsWith('thành phố')) return val;
-  if (val.toLowerCase().startsWith('ngày') || val.toLowerCase().includes('tháng')) {
-    return `Thành phố Hồ Chí Minh, ${val}`;
-  }
-
-  // Định dạng chuỗi ngày dạng dd/mm/yyyy
-  if (val.includes('/')) {
-    const parts = val.split('/');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10);
-      const year = parts[2];
-      if (!isNaN(day) && !isNaN(month)) {
-        return `Thành phố Hồ Chí Minh, ngày ${day} tháng ${month} năm ${year}`;
-      }
-    }
-  } else if (val.includes('-')) {
-    const parts = val.split('-');
-    if (parts.length === 3) {
-      const year = parts[0];
-      const month = parseInt(parts[1], 10);
-      const day = parseInt(parts[2], 10);
-      if (!isNaN(day) && !isNaN(month)) {
-        return `Thành phố Hồ Chí Minh, ngày ${day} tháng ${month} năm ${year}`;
-      }
-    }
-  }
-
-  return `Thành phố Hồ Chí Minh, ${val}`;
 }
 
 export const PreviewModal: React.FC<PreviewModalProps> = ({
@@ -55,6 +18,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
   table1,
   table2,
   metadata,
+  setMetadata,
   onDownloadWord
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
@@ -158,6 +122,23 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
             .bg-slate-100 { background-color: #f1f5f9; }
             .border-t { border-top: 1px solid #000000 !important; }
             .border-black { border-color: #000000 !important; }
+            .border-none { border: none !important; }
+            .gap-16 { gap: 4rem; }
+            .justify-center { justify-content: center; }
+            
+            .header-table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              border: none !important;
+              margin-top: 0 !important;
+              margin-bottom: 0.5rem !important;
+            }
+            .header-table td {
+              border: none !important;
+              padding: 0 !important;
+              vertical-align: top !important;
+              text-align: center !important;
+            }
             
             table {
               width: 100%;
@@ -182,7 +163,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
               break-inside: avoid;
             }
             thead {
-              display: table-header-group;
+              display: table-row-group !important;
             }
             .text-\\[11pt\\] { font-size: 11pt; }
             .text-\\[11\\.5pt\\] { font-size: 11.5pt; }
@@ -215,7 +196,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white w-full max-w-4xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="bg-[#005dac] text-white px-6 py-3.5 flex items-center justify-between">
@@ -223,6 +204,31 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
             <span>Xem trước Báo cáo Hành chính (Mẫu chuẩn NĐ 30/2020/NĐ-CP)</span>
           </h3>
           <div className="flex items-center gap-2">
+            {setMetadata && (
+              <>
+                <div className="flex items-center gap-1.5 text-xs text-blue-100 bg-white/10 px-2.5 py-1 rounded-lg border border-white/20">
+                  <span className="font-semibold text-white whitespace-nowrap">Người báo cáo:</span>
+                  <input
+                    type="text"
+                    value={metadata.nguoi_lap || ''}
+                    onChange={(e) => setMetadata(prev => ({ ...prev, nguoi_lap: e.target.value }))}
+                    className="bg-white text-slate-900 px-2 py-0.5 rounded text-xs font-bold border-none cursor-pointer focus:ring-2 focus:ring-amber-300 w-36"
+                    placeholder="Họ và tên..."
+                    title="Thay đổi tên người lập báo cáo"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-blue-100 bg-white/10 px-2.5 py-1 rounded-lg border border-white/20 mr-1">
+                  <span className="font-semibold text-white whitespace-nowrap">Ngày lập:</span>
+                  <input
+                    type="date"
+                    value={toInputDate(metadata.ngay_lap)}
+                    onChange={(e) => setMetadata(prev => ({ ...prev, ngay_lap: e.target.value }))}
+                    className="bg-white text-slate-900 px-2 py-0.5 rounded text-xs font-bold border-none cursor-pointer focus:ring-2 focus:ring-amber-300"
+                    title="Thay đổi ngày lập báo cáo"
+                  />
+                </div>
+              </>
+            )}
             <button
               onClick={onDownloadWord}
               className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
@@ -252,25 +258,30 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
             style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: '13pt' }}
           >
             {/* THỂ THỨC HÀNH CHÍNH VĂN BẢN (NĐ 30/2020/NĐ-CP) */}
-            <div className="flex justify-center items-start mb-2 w-full gap-16">
-              {/* Bên trái: Cơ quan chủ quản & Đơn vị */}
-              <div className="text-center text-[12pt] leading-tight">
-                <div className="uppercase font-normal">
-                  <span className="whitespace-nowrap">BAN QUẢN LÝ CÁC KHU LIÊN HỢP</span>
-                  <br />
-                  <span className="whitespace-nowrap">XỬ LÝ CHẤT THẢI THÀNH PHỐ</span>
-                </div>
-                <div className="font-bold uppercase text-[12pt] mt-0.5">{'VĂN PHÒNG'}</div>
-                <div className="w-16 border-t border-black mx-auto mt-1" />
-              </div>
-
-              {/* Bên phải: Quốc hiệu & Tiêu ngữ */}
-              <div className="text-center text-[12pt] leading-tight">
-                <div className="font-bold uppercase text-[12pt] whitespace-nowrap">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-                <div className="font-bold text-[13pt] whitespace-nowrap mt-0.5">Độc lập – Tự do – Hạnh phúc</div>
-                <div className="w-36 border-t border-black mx-auto mt-1" />
-              </div>
-            </div>
+            <table className="w-full mb-2 header-table" style={{ width: '100%', border: 'none', borderCollapse: 'collapse', marginBottom: '0.5rem' }}>
+              <tbody>
+                <tr>
+                  <td style={{ width: '45%', border: 'none', verticalAlign: 'top', textAlign: 'center', padding: 0 }}>
+                    <div className="text-center text-[12pt] leading-tight">
+                      <div className="uppercase font-normal">
+                        <span className="whitespace-nowrap">BAN QUẢN LÝ CÁC KHU LIÊN HỢP</span>
+                        <br />
+                        <span className="whitespace-nowrap">XỬ LÝ CHẤT THẢI THÀNH PHỐ</span>
+                      </div>
+                      <div className="font-bold uppercase text-[12pt] mt-0.5">VĂN PHÒNG</div>
+                      <div className="w-16 border-t border-black mx-auto mt-1" style={{ width: '4rem', borderTop: '1px solid #000', margin: '0.25rem auto 0 auto' }} />
+                    </div>
+                  </td>
+                  <td style={{ width: '55%', border: 'none', verticalAlign: 'top', textAlign: 'center', padding: 0 }}>
+                    <div className="text-center text-[12pt] leading-tight">
+                      <div className="font-bold uppercase text-[12pt] whitespace-nowrap">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+                      <div className="font-bold text-[13pt] whitespace-nowrap mt-0.5">Độc lập – Tự do – Hạnh phúc</div>
+                      <div className="w-36 border-t border-black mx-auto mt-1" style={{ width: '9rem', borderTop: '1px solid #000', margin: '0.25rem auto 0 auto' }} />
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
             {/* Địa danh và Ngày tháng năm */}
             <div className="text-right italic text-[13pt] mb-6">
@@ -439,7 +450,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
               <div className="text-center">
                 <div className="font-bold uppercase text-[12pt]">NGƯỜI BÁO CÁO</div>
                 <div className="h-20" /> {/* Khoảng trống 3-4 dòng cho chữ ký */}
-                <div className="font-bold text-[13pt]">{'Trần Thuận Hóa'}</div>
+                <div className="font-bold text-[13pt]">{metadata.nguoi_lap || ''}</div>
               </div>
             </div>
           </div>

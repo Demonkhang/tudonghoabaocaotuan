@@ -12,22 +12,27 @@ import { CarryOverModal } from './components/CarryOverModal';
 import { KanbanPlannerModal, KanbanTaskItem } from './components/KanbanPlannerModal';
 import { AdminPanelModal, DepartmentItem } from './components/AdminPanelModal';
 import { ShareReportModal } from './components/ShareReportModal';
+import { CompletionProofModal } from './components/CompletionProofModal';
+import { TaskDetailModal } from './components/TaskDetailModal';
+import { ReportChoiceModal } from './components/ReportChoiceModal';
 import { FileSpreadsheet, Upload, Download, Sparkles, CheckCircle, History, PlusCircle, Layout } from 'lucide-react';
 import {
   TaskTable1,
   TaskTable2,
   ReportMetadata,
-  validateReport
+  validateReport,
+  toInputDate
 } from './utils/reportUtils';
 import { exportWordReport, fetchReportDetail, saveReportData, triggerCarryOver, fetchReportHistory } from './services/api';
 import { parseExcelFile, downloadExcelTemplate } from './utils/excelParser';
+import { exportReportToExcel } from './utils/excelExporter';
 
 const initialDataSample = {
   metadata: {
     tuan: 42,
     tuan_tiep: 43,
     nam: 2026,
-    nguoi_lap: "Trần Thuận Hóa",
+    nguoi_lap: "",
     don_vi: "VĂN PHÒNG BAN QUẢN LÝ",
     co_quan_cap_tren: "BAN QUẢN LÝ CÁC KHU LIÊN HỢP XỬ LÝ CHẤT THẢI THÀNH PHỐ",
     ngay_lap: "20/10/2026"
@@ -83,24 +88,36 @@ const initialDataSample = {
 };
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>({
-    id: 'acc_vp_hoa',
-    username: 'vanphong',
-    full_name: 'Trần Thuận Hóa',
-    role: 'LEADER',
-    department_id: 'dept_vp',
-    department_name: 'Văn phòng Ban Quản lý',
-    department_code: 'VP'
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const saved = localStorage.getItem('currentUser');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Lỗi khi nạp currentUser từ localStorage:', e);
+    }
+    return null;
   });
 
-  const [metadata, setMetadata] = useState<ReportMetadata>({
-    tuan: 42,
-    tuan_tiep: 43,
-    nam: 2026,
-    nguoi_lap: "Trần Thuận Hóa",
-    don_vi: "Văn phòng Ban Quản lý",
-    co_quan_cap_tren: "BAN QUẢN LÝ CÁC KHU LIÊN HỢP XỬ LÝ CHẤT THẢI THÀNH PHỐ",
-    ngay_lap: "20/10/2026"
+  const [metadata, setMetadata] = useState<ReportMetadata>(() => {
+    const savedUser = (() => {
+      try {
+        const saved = localStorage.getItem('currentUser');
+        if (saved) return JSON.parse(saved);
+      } catch (e) { }
+      return null;
+    })();
+
+    return {
+      tuan: 42,
+      tuan_tiep: 43,
+      nam: 2026,
+      nguoi_lap: savedUser?.full_name || "Chưa đăng nhập",
+      don_vi: savedUser?.department_name || "Chưa chọn phòng ban",
+      co_quan_cap_tren: "BAN QUẢN LÝ CÁC KHU LIÊN HỢP XỬ LÝ CHẤT THẢI THÀNH PHỐ",
+      ngay_lap: toInputDate()
+    };
   });
 
   const [hasLoadedData, setHasLoadedData] = useState<boolean>(false);
@@ -122,7 +139,18 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
   const [recentlyCreatedWeek, setRecentlyCreatedWeek] = useState<number | null>(null);
+
+  // States for main table proof validation & task detail modals
+  const [pendingMainProofTask, setPendingMainProofTask] = useState<TaskTable1 | null>(null);
+  const [activeMainDetailTask, setActiveMainDetailTask] = useState<KanbanTaskItem | null>(null);
+  const [activeMainDetailMode, setActiveMainDetailMode] = useState<'view' | 'edit'>('view');
   const [isInitialLoadDone, setIsInitialLoadDone] = useState<boolean>(false);
+
+  // Concurrency & Shared Report Choice states
+  const [lastSaveUpdatedAt, setLastSaveUpdatedAt] = useState<string | null>(null);
+  const [isChoiceModalOpen, setIsChoiceModalOpen] = useState<boolean>(false);
+  const [sharedChoiceData, setSharedChoiceData] = useState<{ ownerName: string; week: number; year: number; reportId: string } | null>(null);
+  const [hasPromptedChoiceSet, setHasPromptedChoiceSet] = useState<Set<string>>(new Set());
 
   // Modals & User Permissions
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
@@ -155,6 +183,9 @@ export default function App() {
 
   useEffect(() => {
     loadDepartmentsList();
+    if (!currentUser) {
+      setIsLoginOpen(true);
+    }
   }, []);
 
   // Tự động tìm báo cáo mới nhất từ CSDL của tài khoản khi ứng dụng khởi động hoặc reload (F5)
@@ -190,6 +221,14 @@ export default function App() {
       }
     };
 
+    if (currentUser?.full_name) {
+      setMetadata(prev => ({
+        ...prev,
+        nguoi_lap: currentUser.full_name,
+        don_vi: currentUser.department_name || prev.don_vi
+      }));
+    }
+
     autoLoadLatestReportOnStart();
   }, [currentUser?.id, currentUser?.department_id]);
 
@@ -200,16 +239,6 @@ export default function App() {
     }
   }, [metadata.tuan, metadata.nam]);
 
-  // Kiểm tra nếu tuần không có nhiệm vụ nào thì lập tức quay về màn hình khởi tạo
-  useEffect(() => {
-    if (hasLoadedData) {
-      const valid1 = table1.filter(t => t.noi_dung.trim().length > 0);
-      const valid2 = table2.filter(t => t.noi_dung.trim().length > 0);
-      if (valid1.length === 0 && valid2.length === 0) {
-        setHasLoadedData(false);
-      }
-    }
-  }, [table1, table2, hasLoadedData]);
 
   const loadReportFromDB = async (deptId: string, week: number, year: number, reportId?: string) => {
     setIsLoading(true);
@@ -223,11 +252,14 @@ export default function App() {
       const valid2 = fetchedTable2.filter((t: any) => (t.noi_dung || '').trim().length > 0);
       const hasAnyTask = valid1.length > 0 || valid2.length > 0;
 
-      setUserPermission(res.data.metadata.user_permission || 'OWNER');
+      const meta = res.data.metadata;
+      setUserPermission(meta.user_permission || 'OWNER');
+      setLastSaveUpdatedAt(meta.updated_at || null);
+
       setMetadata(prev => ({
-        ...res.data.metadata,
-        don_vi: res.data.metadata.don_vi || currentUser?.department_name,
-        nguoi_lap: res.data.metadata.nguoi_lap || currentUser?.full_name
+        ...meta,
+        don_vi: meta.don_vi || currentUser?.department_name,
+        nguoi_lap: meta.nguoi_lap || currentUser?.full_name
       }));
       setTable1(fetchedTable1);
       setTable2(fetchedTable2);
@@ -237,6 +269,23 @@ export default function App() {
       });
       setHasLoadedData(hasAnyTask);
       setSyncedAt(new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }));
+
+      // If this report is owned by someone else (e.g. Leader) and user is STAFF with EDIT permissions
+      const key = `${week}_${year}_${meta.report_id}`;
+      if (
+        meta.user_permission === 'EDIT' &&
+        meta.account_id !== currentUser?.id &&
+        !hasPromptedChoiceSet.has(key)
+      ) {
+        setSharedChoiceData({
+          ownerName: meta.nguoi_lap || 'Tổ trưởng',
+          week,
+          year,
+          reportId: meta.report_id
+        });
+        setIsChoiceModalOpen(true);
+        setHasPromptedChoiceSet(prev => new Set(prev).add(key));
+      }
     } else {
       setUserPermission('OWNER');
       setMetadata(prev => ({
@@ -301,12 +350,36 @@ export default function App() {
   // Login Handler
   const handleLoginSuccess = (user: UserProfile) => {
     setCurrentUser(user);
+    try {
+      localStorage.setItem('currentUser', JSON.stringify(user));
+    } catch (e) {
+      console.error('Lỗi khi lưu currentUser vào localStorage:', e);
+    }
     setMetadata(prev => ({
       ...prev,
       don_vi: user.department_name,
       nguoi_lap: user.full_name
     }));
     showToast(`Đã chuyển sang tài khoản "${user.full_name}" (${user.department_code})`);
+  };
+
+  // Logout Handler
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('currentUser');
+    } catch (e) { }
+    setCurrentUser(null);
+    setMetadata(prev => ({
+      ...prev,
+      don_vi: "Chưa chọn phòng ban",
+      nguoi_lap: "Chưa đăng nhập"
+    }));
+    setTable1([]);
+    setTable2([]);
+    setInitialSnapshot({ table1: [], table2: [] });
+    setHasLoadedData(false);
+    setIsLoginOpen(true);
+    showToast('Đã đăng xuất tài khoản.');
   };
 
   // Select Report from History Drawer
@@ -383,6 +456,17 @@ export default function App() {
     }
   };
 
+  // Export ra File Sheet (.xlsx)
+  const handleExportExcel = () => {
+    try {
+      exportReportToExcel(metadata, table1, table2);
+      showToast('Đã xuất file Excel báo cáo thành công!');
+    } catch (err: any) {
+      console.error('Error exporting Excel:', err);
+      alert('Lỗi khi xuất file Excel: ' + (err?.message || err));
+    }
+  };
+
   // Đồng bộ lại từ CSDL
   const handleSync = async () => {
     if (currentUser) {
@@ -411,6 +495,35 @@ export default function App() {
     showToast("Đã khôi phục dữ liệu về trạng thái ban đầu!");
   };
 
+  // Xóa nhanh toàn bộ nhiệm vụ & kế hoạch tuần
+  const handleClearAllTasks = () => {
+    if (table1.length === 0 && table2.length === 0) {
+      showToast("Báo cáo tuần hiện tại đã trống!");
+      return;
+    }
+    if (window.confirm("⚠️ BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ NHIỆM VỤ VÀ KẾ HOẠCH TRONG TUẦN NÀY KHÔNG?\n\nHành động này sẽ xóa tất cả công việc ở cả Bảng I và Bảng II. Bạn có thể nhấn 'Đồng bộ' hoặc 'Khôi phục' để tải lại dữ liệu cũ nếu chưa bấm 'Lưu Báo Cáo'.")) {
+      setTable1([]);
+      setTable2([]);
+      showToast("Đã xóa sạch toàn bộ nội dung công việc & kế hoạch tuần này!");
+    }
+  };
+
+  const handleClearTable1 = () => {
+    if (table1.length === 0) return;
+    if (window.confirm("⚠️ Bạn có chắc chắn muốn xóa tất cả nhiệm vụ trong BẢNG I (Kết quả thực hiện công tác) không?")) {
+      setTable1([]);
+      showToast("Đã xóa toàn bộ nhiệm vụ Bảng I!");
+    }
+  };
+
+  const handleClearTable2 = () => {
+    if (table2.length === 0) return;
+    if (window.confirm("⚠️ Bạn có chắc chắn muốn xóa tất cả kế hoạch trong BẢNG II (Kế hoạch tuần tiếp theo) không?")) {
+      setTable2([]);
+      showToast("Đã xóa toàn bộ kế hoạch Bảng II!");
+    }
+  };
+
   const handleScrollToRow = (rowId: string) => {
     setHighlightedRowId(rowId);
     const element = document.getElementById(`row_${rowId}`);
@@ -433,11 +546,19 @@ export default function App() {
 
     const targetWeek = metadata.tuan + 1;
     const targetYear = metadata.nam;
-    const targetReportId = `rpt_${currentUser.department_id}_w${targetWeek}_${targetYear}`;
+    const targetReportId = `rpt_${currentUser.id}_w${targetWeek}_${targetYear}`;
+
+    // Hàm xác định Bảng I hay Bảng II cho nhiệm vụ kế hoạch
+    const isTable2Task = (t: KanbanTaskItem) => {
+      if (t.targetTable === 2) return true;
+      if (t.targetTable === 1) return false;
+      // Mặc định: Nếu nhiệm vụ có nguồn từ BẢNG II (Kế hoạch tuần trước) thì giữ nguyên ở BẢNG II
+      return t.originalTable === 2 || t.source === 'planned_table2';
+    };
 
     // Tách các nhiệm vụ được gán vào Bảng I (thực hiện) vs Bảng II (kế hoạch tiếp theo)
-    const table1Candidates = plannedTasks.filter(t => t.targetTable !== 2);
-    const table2Candidates = plannedTasks.filter(t => t.targetTable === 2);
+    const table1Candidates = plannedTasks.filter(t => !isTable2Task(t));
+    const table2Candidates = plannedTasks.filter(t => isTable2Task(t));
 
     // Table 1 (Nhiệm vụ thực hiện tuần mới - BẢNG I)
     const newTable1: TaskTable1[] = table1Candidates.map((t, idx) => ({
@@ -477,7 +598,7 @@ export default function App() {
     });
 
     // Save current week report with updated completed/cancelled tasks
-    const currentReportId = `rpt_${currentUser.department_id}_w${metadata.tuan}_${metadata.nam}`;
+    const currentReportId = metadata.report_id || `rpt_${currentUser.id}_w${metadata.tuan}_${metadata.nam}`;
     await saveReportData({
       metadata: {
         ...metadata,
@@ -523,7 +644,7 @@ export default function App() {
     if (!currentUser) return;
     setIsLoading(true);
 
-    const targetReportId = `rpt_${currentUser.department_id}_w${metadata.tuan}_${metadata.nam}`;
+    const targetReportId = metadata.report_id || `rpt_${currentUser.id}_w${metadata.tuan}_${metadata.nam}`;
 
     const payload = {
       metadata: {
@@ -535,10 +656,25 @@ export default function App() {
         nam: metadata.nam
       },
       table1,
-      table2
+      table2,
+      client_last_updated_at: lastSaveUpdatedAt
     };
 
-    const res = await saveReportData(payload);
+    let res = await saveReportData(payload);
+
+    // Concurrency conflict check
+    if (res && res.conflict) {
+      setIsLoading(false);
+      const userConfirm = window.confirm(`${res.message}\n\nBạn có muốn GHI ĐÈ thay đổi của bạn lên CSDL không?`);
+      if (userConfirm) {
+        setIsLoading(true);
+        res = await saveReportData({ ...payload, force_save: true });
+      } else {
+        showToast('Đã hủy lưu để giữ dữ liệu CSDL.');
+        return;
+      }
+    }
+
     setIsLoading(false);
 
     if (res && res.success) {
@@ -546,6 +682,7 @@ export default function App() {
       setSyncedAt(nowStr);
       setRecentlyCreatedWeek(metadata.tuan);
       setMetadata(prev => ({ ...prev, report_id: targetReportId }));
+      setLastSaveUpdatedAt(new Date().toISOString());
       setInitialSnapshot({
         table1: JSON.parse(JSON.stringify(table1)),
         table2: JSON.parse(JSON.stringify(table2))
@@ -587,7 +724,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden text-slate-800 bg-[#f9f9ff]">
+    <div className="flex flex-col h-screen overflow-hidden text-slate-800 dark:text-slate-100 bg-[#f9f9ff] dark:bg-slate-950 transition-colors duration-300">
       {/* HEADER CỐ ĐỊNH */}
       <Header
         metadata={metadata}
@@ -628,6 +765,8 @@ export default function App() {
         onOpenGuide={() => setIsGuideOpen(true)}
         isLoading={isLoading}
         onImportFile={handleImportFile}
+        onExportExcel={handleExportExcel}
+        onClearAll={handleClearAllTasks}
         currentUser={currentUser}
         userPermission={userPermission}
         onOpenLogin={() => setIsLoginOpen(true)}
@@ -637,6 +776,12 @@ export default function App() {
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenShare={() => setIsShareOpen(true)}
         onSave={handleSaveReport}
+        onSwitchToPersonalReport={() => {
+          if (!currentUser) return;
+          const personalReportId = `rpt_${currentUser.id}_w${metadata.tuan}_${metadata.nam}`;
+          loadReportFromDB(currentUser.department_id, metadata.tuan, metadata.nam, personalReportId);
+          showToast(`Đã chuyển sang Báo cáo Cá nhân của bạn cho Tuần ${metadata.tuan}!`);
+        }}
       />
 
       {/* THÔNG BÁO TOAST */}
@@ -654,17 +799,17 @@ export default function App() {
       <main className="flex-1 overflow-hidden grid grid-cols-12 gap-0 relative">
         {!hasLoadedData ? (
           /* Màn hình khởi tạo chưa có dữ liệu */
-          <div className="col-span-12 flex flex-col items-center justify-center p-8 bg-slate-50/80 overflow-y-auto">
-            <div className="max-w-4xl w-full bg-white rounded-2xl border border-slate-200 shadow-xl p-8 space-y-6 text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-[#005dac] border border-blue-100 shadow-2xs mb-2">
+          <div className="col-span-12 flex flex-col items-center justify-center p-8 bg-slate-50/80 dark:bg-slate-950/90 overflow-y-auto transition-colors duration-300">
+            <div className="max-w-4xl w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-8 space-y-6 text-center transition-colors duration-300">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 dark:bg-slate-800 text-[#005dac] dark:text-blue-400 border border-blue-100 dark:border-slate-700 shadow-2xs mb-2">
                 <FileSpreadsheet className="w-8 h-8" />
               </div>
 
               <div>
-                <h2 className="text-xl font-extrabold text-[#001e30] tracking-tight">
+                <h2 className="text-xl font-extrabold text-[#001e30] dark:text-white tracking-tight">
                   BÁO CÁO TUẦN {metadata.tuan}/{metadata.nam} - {currentUser?.department_name || 'ĐƠN VỊ'}
                 </h2>
-                <p className="text-xs text-slate-500 mt-1 max-w-xl mx-auto leading-relaxed">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl mx-auto leading-relaxed">
                   Chưa có dữ liệu báo cáo cho tuần này. Bạn có thể tạo báo cáo mới, lập kế hoạch dạng Kanban kéo thả, kế thừa nhiệm vụ dở dang từ tuần trước hoặc import từ tệp Excel.
                 </p>
               </div>
@@ -748,6 +893,24 @@ export default function App() {
               tuanTiep={metadata.tuan_tiep}
               nam={metadata.nam}
               isReadOnly={userPermission === 'VIEW'}
+              onOpenProofModal={(row) => setPendingMainProofTask(row)}
+              onOpenDetailModal={(row, mode) => {
+                setActiveMainDetailTask({
+                  id: row.id,
+                  noi_dung: row.noi_dung,
+                  nhom: row.nhom,
+                  thoi_gian: row.thoi_gian,
+                  trien_khai: row.trien_khai,
+                  tien_do: row.tien_do,
+                  san_pham: row.san_pham,
+                  file_minh_chung: row.file_minh_chung,
+                  file_original_name: row.file_original_name,
+                  source: 'unfinished_table1'
+                });
+                setActiveMainDetailMode(mode);
+              }}
+              onClearTable1={handleClearTable1}
+              onClearTable2={handleClearTable2}
             />
 
             <ValidationPanel
@@ -773,6 +936,7 @@ export default function App() {
           don_vi: currentUser?.department_name || metadata.don_vi,
           nguoi_lap: currentUser?.full_name || metadata.nguoi_lap
         }}
+        setMetadata={setMetadata}
         onDownloadWord={handleGenerateWord}
       />
 
@@ -788,6 +952,7 @@ export default function App() {
         onClose={() => setIsLoginOpen(false)}
         onLoginSuccess={handleLoginSuccess}
         currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* DRAWER LỊCH SỬ BÁO CÁO TUẦN */}
@@ -845,6 +1010,79 @@ export default function App() {
           currentUser={currentUser}
         />
       )}
+
+      {/* MODAL XÁC NHẬN MINH CHỨNG HOÀN THÀNH MAIN PAGE */}
+      <CompletionProofModal
+        isOpen={!!pendingMainProofTask}
+        taskTitle={pendingMainProofTask?.noi_dung || ''}
+        onClose={() => setPendingMainProofTask(null)}
+        onConfirm={(proofData) => {
+          if (!pendingMainProofTask) return;
+          setTable1(prev =>
+            prev.map(t =>
+              t.id === pendingMainProofTask.id
+                ? {
+                  ...t,
+                  tien_do: 'Hoàn thành',
+                  san_pham: proofData.san_pham,
+                  file_minh_chung: proofData.file_minh_chung,
+                  file_original_name: proofData.file_original_name,
+                  isEdited: true
+                }
+                : t
+            )
+          );
+          setPendingMainProofTask(null);
+        }}
+      />
+
+      {/* MODAL XEM CHI TIẾT & CHỈNH SỬA MAIN PAGE */}
+      <TaskDetailModal
+        isOpen={!!activeMainDetailTask}
+        mode={activeMainDetailMode}
+        task={activeMainDetailTask}
+        onClose={() => setActiveMainDetailTask(null)}
+        onSave={(updatedTask) => {
+          setTable1(prev =>
+            prev.map(t =>
+              t.id === updatedTask.id
+                ? {
+                  ...t,
+                  noi_dung: updatedTask.noi_dung,
+                  nhom: (updatedTask.nhom === 'Đột xuất' ? 'Đột xuất' : 'Thường xuyên') as any,
+                  thoi_gian: updatedTask.thoi_gian || 'Trong tuần',
+                  trien_khai: updatedTask.trien_khai || '',
+                  tien_do: updatedTask.tien_do || 'Đang thực hiện',
+                  san_pham: updatedTask.san_pham || '',
+                  file_minh_chung: updatedTask.file_minh_chung || '',
+                  file_original_name: updatedTask.file_original_name || '',
+                  isEdited: true
+                }
+                : t
+            )
+          );
+        }}
+      />
+
+      {/* MODAL LỰA CHỌN BÁO CÁO DÙNG CHUNG VS CÁ NHÂN */}
+      <ReportChoiceModal
+        isOpen={isChoiceModalOpen}
+        weekNumber={sharedChoiceData?.week || metadata.tuan}
+        year={sharedChoiceData?.year || metadata.nam}
+        sharedOwnerName={sharedChoiceData?.ownerName || 'Tổ trưởng'}
+        onClose={() => setIsChoiceModalOpen(false)}
+        onSelectSharedReport={() => {
+          setIsChoiceModalOpen(false);
+          showToast(`Đã mở Báo cáo Dùng chung của ${sharedChoiceData?.ownerName || 'Tổ trưởng'}`);
+        }}
+        onSelectPersonalReport={() => {
+          setIsChoiceModalOpen(false);
+          if (!currentUser) return;
+          const personalReportId = `rpt_${currentUser.id}_w${metadata.tuan}_${metadata.nam}`;
+          loadReportFromDB(currentUser.department_id, metadata.tuan, metadata.nam, personalReportId);
+          showToast(`Đã chuyển sang Báo cáo Cá nhân của bạn cho Tuần ${metadata.tuan}!`);
+        }}
+      />
     </div>
   );
 }

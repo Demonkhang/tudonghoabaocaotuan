@@ -65,7 +65,7 @@ export function ReportHistoryDrawer({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs z-50 flex justify-end animate-fadeIn">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs z-[200] flex justify-end animate-fadeIn">
       <div className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col border-l border-slate-200">
         {/* Drawer Header */}
         <div className="p-5 bg-gradient-to-r from-[#001e30] to-[#003452] text-white flex items-center justify-between">

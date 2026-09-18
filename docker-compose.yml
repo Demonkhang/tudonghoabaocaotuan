@@ -15,6 +15,7 @@ services:
       - DATABASE_PATH=/app/server/data/weekly_report.db
     volumes:
       - ./server/data:/app/server/data
+      - ./uploads:/app/uploads
       - ./server/templates:/app/server/templates
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
