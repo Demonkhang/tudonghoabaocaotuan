@@ -16,6 +16,7 @@ import { CompletionProofModal } from './components/CompletionProofModal';
 import { TaskDetailModal } from './components/TaskDetailModal';
 import { ReportChoiceModal } from './components/ReportChoiceModal';
 import { StandaloneTaskKanbanModal } from './components/StandaloneTaskKanbanModal';
+import { UserProfileModal } from './components/UserProfileModal';
 import { FileSpreadsheet, Upload, Download, Sparkles, CheckCircle, History, PlusCircle, Layout } from 'lucide-react';
 import {
   TaskTable1,
@@ -163,6 +164,7 @@ export default function App() {
   const [isStandaloneTaskKanbanOpen, setIsStandaloneTaskKanbanOpen] = useState<boolean>(false);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
   const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
+  const [isUserProfileOpen, setIsUserProfileOpen] = useState<boolean>(false);
   const [userPermission, setUserPermission] = useState<'OWNER' | 'ADMIN' | 'EDIT' | 'VIEW' | 'NO_ACCESS'>('OWNER');
 
   // Lấy lỗi validation (BR14)
@@ -770,6 +772,7 @@ export default function App() {
         setMetadata={setMetadata}
         recentlyCreatedWeek={recentlyCreatedWeek}
         currentUser={currentUser}
+        onOpenUserProfile={() => setIsUserProfileOpen(true)}
         onSelectReport={(reportId) => {
           // If notification clicked, load that specific report
           fetchReportDetail('', 0, 0, reportId, currentUser?.id).then(res => {
@@ -1135,6 +1138,22 @@ export default function App() {
           }
         }}
         currentAccount={currentUser}
+      />
+
+      {/* MODAL CẬP NHẬT THÔNG TIN CÁ NHÂN */}
+      <UserProfileModal
+        isOpen={isUserProfileOpen}
+        onClose={() => setIsUserProfileOpen(false)}
+        currentUser={currentUser}
+        onUpdateSuccess={(updatedUser) => {
+          setCurrentUser(updatedUser);
+          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+          setMetadata(prev => ({
+            ...prev,
+            nguoi_lap: updatedUser.full_name,
+            don_vi: updatedUser.department_name || prev.don_vi
+          }));
+        }}
       />
     </div>
   );

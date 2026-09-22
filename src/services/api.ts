@@ -182,6 +182,20 @@ export async function createStandaloneTaskApi(payload: { title: string; descript
   }
 }
 
+export async function batchImportStandaloneTasksApi(payload: { tasks: any[]; created_by: string }) {
+  try {
+    const res = await fetch('/api/standalone-tasks/batch-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+
 export async function assignStandaloneTaskApi(payload: { task_id: string; assigner_id: string; assignee_id: string; target_position_level: string; instruction_note?: string; due_date?: string }) {
   try {
     const res = await fetch('/api/standalone-tasks/assign', {
@@ -195,7 +209,7 @@ export async function assignStandaloneTaskApi(payload: { task_id: string; assign
   }
 }
 
-export async function stageStandaloneTaskAssigneeApi(payload: { task_id: string; assignee_id: string; position_level: string; instruction_note?: string }) {
+export async function stageStandaloneTaskAssigneeApi(payload: { task_id: string; assignee_id: string; position_level: string; instruction_note?: string; assigner_id?: string; assigned_date?: string }) {
   try {
     const res = await fetch('/api/standalone-tasks/stage-assignee', {
       method: 'POST',
@@ -207,6 +221,33 @@ export async function stageStandaloneTaskAssigneeApi(payload: { task_id: string;
     return { success: false, error: err.message };
   }
 }
+
+export async function bulkStageStandaloneTaskAssigneesApi(payload: { task_ids: string[]; assignee_id: string; position_level: string; instruction_note?: string; assigner_id?: string; assigned_date?: string; due_date?: string }) {
+  try {
+    const res = await fetch('/api/standalone-tasks/bulk-stage-assignee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function bulkDeleteStandaloneTasksApi(taskIds: string[]) {
+  try {
+    const res = await fetch('/api/standalone-tasks/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_ids: taskIds })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 
 export async function unstageStandaloneTaskAssigneeApi(payload: { task_id: string; assignee_id: string }) {
   try {
@@ -1156,6 +1197,60 @@ export async function createAdminAccount(accountData: any) {
     return await res.json();
   } catch (err: any) {
     console.error('Lỗi createAdminAccount:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function bulkImportAdminAccountsApi(accounts: any[]) {
+  try {
+    const res = await fetch('/api/admin/accounts/bulk-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts })
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi bulkImportAdminAccountsApi:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateUserProfileApi(userId: string, payload: { full_name: string; password?: string }) {
+  try {
+    const res = await fetch('/api/user/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, ...payload })
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi updateUserProfileApi:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateAdminAccount(id: string, accountData: any) {
+  try {
+    const res = await fetch(`/api/admin/accounts/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(accountData)
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi updateAdminAccount:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function toggleAdminAccountStatus(id: string) {
+  try {
+    const res = await fetch(`/api/admin/accounts/${id}/toggle-status`, {
+      method: 'POST'
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi toggleAdminAccountStatus:', err);
     return { success: false, error: err.message };
   }
 }

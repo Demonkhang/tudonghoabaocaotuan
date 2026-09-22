@@ -48,9 +48,15 @@ async function startServer() {
   app.post('/api/auth/login', reportController.login);
   app.get('/api/departments', reportController.getDepartments);
 
+  // API Endpoints - User Profile
+  app.put('/api/user/profile', reportController.updateUserProfile);
+
   // API Endpoints - Admin Management
   app.get('/api/admin/accounts', reportController.getAccounts);
   app.post('/api/admin/accounts', reportController.createAccount);
+  app.post('/api/admin/accounts/bulk-import', reportController.bulkImportAccounts);
+  app.put('/api/admin/accounts/:id', reportController.updateAccount);
+  app.post('/api/admin/accounts/:id/toggle-status', reportController.toggleAccountStatus);
   app.delete('/api/admin/accounts/:id', reportController.deleteAccount);
   app.post('/api/admin/departments', reportController.createDepartment);
   app.get('/api/admin/roles', reportController.getRoles);
@@ -69,6 +75,12 @@ async function startServer() {
   app.delete('/api/standalone-tasks/:id', standaloneTaskController.deleteTask);
   app.post('/api/standalone-tasks/publish-plan', standaloneTaskController.publishPlan);
   app.get('/api/standalone-tasks/synced-directive', standaloneTaskController.getSyncedDirectiveTasks);
+  app.post('/api/standalone-tasks/batch-import', standaloneTaskController.batchImportTasks);
+  app.post('/api/standalone-tasks/bulk-stage-assignee', standaloneTaskController.bulkStageAssignee);
+  app.post('/api/standalone-tasks/bulk-delete', standaloneTaskController.bulkDeleteTasks);
+  app.post('/api/standalone-tasks/complete', standaloneTaskController.completeTask);
+
+
 
   // API Endpoints - Reports & History & Carry-Over Core
   app.get('/api/reports/history', reportController.getReportHistory);

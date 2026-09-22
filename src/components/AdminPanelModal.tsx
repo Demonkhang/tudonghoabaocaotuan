@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Building2, UserPlus, Trash2, ShieldCheck, Plus, CheckCircle2, AlertCircle, Sliders, ChevronRight, Award, User } from 'lucide-react';
-import { fetchAdminAccounts, createAdminAccount, deleteAdminAccount, createAdminDepartment, fetchAdminRoles, createAdminRole } from '../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { Users, Building2, UserPlus, Trash2, ShieldCheck, Plus, CheckCircle2, AlertCircle, Sliders, ChevronRight, Award, User, Edit3, Lock, Unlock, FileSpreadsheet, Upload } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { fetchAdminAccounts, createAdminAccount, updateAdminAccount, toggleAdminAccountStatus, deleteAdminAccount, createAdminDepartment, fetchAdminRoles, createAdminRole, bulkImportAdminAccountsApi } from '../services/api';
 
 export interface AdminAccount {
   id: string;
@@ -53,6 +54,7 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form State - Account
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('123456');
   const [newFullName, setNewFullName] = useState('');
@@ -102,8 +104,29 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
     setTimeout(() => setMessage(null), 4000);
   };
 
-  // Create new Account
-  const handleCreateAccount = async (e: React.FormEvent) => {
+  // Start Editing Account
+  const handleStartEditAccount = (acc: AdminAccount) => {
+    setEditingAccountId(acc.id);
+    setNewUsername(acc.username);
+    setNewFullName(acc.full_name);
+    setNewPassword(''); // Mặc định để trống trừ khi muốn đổi mật khẩu
+    setNewDeptId(acc.department_id);
+    setNewRole(acc.role);
+    setNewPositionLevel(acc.position_level || 'CHUYEN_VIEN');
+  };
+
+  const handleCancelEditAccount = () => {
+    setEditingAccountId(null);
+    setNewUsername('');
+    setNewFullName('');
+    setNewPassword('123456');
+    if (departments.length > 0) setNewDeptId(departments[0].id);
+    setNewRole('STAFF');
+    setNewPositionLevel('CHUYEN_VIEN');
+  };
+
+  // Submit Account Form (Create or Update)
+  const handleSaveAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername.trim() || !newFullName.trim() || !newDeptId) {
       showMessage('error', 'Vui lòng nhập đầy đủ tên đăng nhập, họ tên và chọn phòng ban!');
@@ -111,25 +134,60 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
     }
 
     setIsLoading(true);
-    const res = await createAdminAccount({
-      username: newUsername.trim(),
-      password: newPassword,
-      full_name: newFullName.trim(),
-      department_id: newDeptId,
-      role: newRole,
-      position_level: newPositionLevel
-    });
+    let res;
+    if (editingAccountId) {
+      res = await updateAdminAccount(editingAccountId, {
+        username: newUsername.trim(),
+        password: newPassword,
+        full_name: newFullName.trim(),
+        department_id: newDeptId,
+        role: newRole,
+        position_level: newPositionLevel
+      });
+    } else {
+      res = await createAdminAccount({
+        username: newUsername.trim(),
+        password: newPassword,
+        full_name: newFullName.trim(),
+        department_id: newDeptId,
+        role: newRole,
+        position_level: newPositionLevel
+      });
+    }
     setIsLoading(false);
 
     if (res && res.success) {
-      showMessage('success', res.message || 'Tạo tài khoản thành công!');
-      setNewUsername('');
-      setNewFullName('');
-      setNewPassword('123456');
+      showMessage('success', res.message || (editingAccountId ? 'Cập nhật tài khoản thành công!' : 'Tạo tài khoản thành công!'));
+      handleCancelEditAccount();
       loadAccounts();
       onRefreshData();
     } else {
-      showMessage('error', res.error || 'Không thể tạo tài khoản');
+      showMessage('error', res.error || 'Không thể lưu tài khoản');
+    }
+  };
+
+  // Toggle Lock/Unlock Account Status
+  const handleToggleLockAccount = async (acc: AdminAccount) => {
+    if (acc.username === 'admin') {
+      alert('Không thể khóa tài khoản Quản trị viên hệ thống (admin)!');
+      return;
+    }
+
+    const actionText = acc.is_active === 1 ? 'KHÓA' : 'MỞ KHÓA';
+    if (!window.confirm(`Bạn có chắc chắn muốn ${actionText} tài khoản "${acc.full_name}" (${acc.username})?`)) {
+      return;
+    }
+
+    setIsLoading(true);
+    const res = await toggleAdminAccountStatus(acc.id);
+    setIsLoading(false);
+
+    if (res && res.success) {
+      showMessage('success', res.message || `Đã ${actionText.toLowerCase()} tài khoản thành công`);
+      loadAccounts();
+      onRefreshData();
+    } else {
+      showMessage('error', res.error || 'Không thể thay đổi trạng thái tài khoản');
     }
   };
 
@@ -207,98 +265,226 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
       setNewRoleScope('');
       loadRoles();
     } else {
-      showMessage('error', res.error || 'Lỗi khi tạo vai trò');
+      showMessage('error', res.error || 'Không thể tạo vai trò mới');
+    }
+  };
+
+  // State for Account Excel Import
+  const accountFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Download sample Excel template for Accounts import
+  const handleDownloadAccountTemplate = () => {
+    const sampleData = [
+      {
+        'Tên đăng nhập (*)': 'nguyenvana',
+        'Mật khẩu (*)': '123456',
+        'Họ và tên (*)': 'Nguyễn Văn A',
+        'Mã phòng ban (*)': 'PGDM',
+        'Cấp bậc phân cấp': 'TRUONG_PHONG',
+        'Vai trò hệ thống': 'LEADER'
+      },
+      {
+        'Tên đăng nhập (*)': 'tranvanb',
+        'Mật khẩu (*)': '123456',
+        'Họ và tên (*)': 'Trần Văn B',
+        'Mã phòng ban (*)': 'PGDM',
+        'Cấp bậc phân cấp': 'PHO_PHONG',
+        'Vai trò hệ thống': 'LEADER'
+      },
+      {
+        'Tên đăng nhập (*)': 'lethic',
+        'Mật khẩu (*)': '123456',
+        'Họ và tên (*)': 'Lê Thị C',
+        'Mã phòng ban (*)': 'PGDM',
+        'Cấp bậc phân cấp': 'CHUYEN_VIEN',
+        'Vai trò hệ thống': 'STAFF'
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleData);
+    worksheet['!cols'] = [
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 25 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 18 }
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Tài khoản mẫu');
+    XLSX.writeFile(workbook, 'File_Mau_Import_Tai_Khoan.xlsx');
+  };
+
+  // Upload and process Excel file for Accounts import
+  const handleAccountFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsLoading(true);
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      if (rawRows.length === 0) {
+        showMessage('error', 'File Excel không có dữ liệu!');
+        setIsLoading(false);
+        e.target.value = '';
+        return;
+      }
+
+      const formattedAccounts = rawRows.map(row => {
+        const username = String(row['Tên đăng nhập (*)'] || row['Tên đăng nhập'] || row['Username'] || row['username'] || '').trim();
+        const password = String(row['Mật khẩu (*)'] || row['Mật khẩu'] || row['Password'] || row['password'] || '123456').trim();
+        const full_name = String(row['Họ và tên (*)'] || row['Họ và tên'] || row['FullName'] || row['full_name'] || '').trim();
+        const department_code = String(row['Mã phòng ban (*)'] || row['Mã phòng ban'] || row['DepartmentCode'] || row['department_code'] || '').trim();
+        const position_level = String(row['Cấp bậc phân cấp'] || row['PositionLevel'] || row['position_level'] || 'CHUYEN_VIEN').trim();
+        const role = String(row['Vai trò hệ thống'] || row['Role'] || row['role'] || 'STAFF').trim();
+
+        return {
+          username,
+          password,
+          full_name,
+          department_code,
+          position_level,
+          role
+        };
+      }).filter(acc => acc.username && acc.full_name);
+
+      if (formattedAccounts.length === 0) {
+        showMessage('error', 'Không tìm thấy dòng dữ liệu hợp lệ (thiếu Tên đăng nhập hoặc Họ tên)!');
+        setIsLoading(false);
+        e.target.value = '';
+        return;
+      }
+
+      const res = await bulkImportAdminAccountsApi(formattedAccounts);
+      setIsLoading(false);
+
+      if (res && res.success) {
+        showMessage('success', res.message || `Đã import thành công ${res.importedCount} tài khoản!`);
+        loadAccounts();
+        onRefreshData();
+      } else {
+        showMessage('error', res.error || 'Lỗi khi import tài khoản từ Excel');
+      }
+    } catch (err: any) {
+      console.error('Lỗi đọc file excel account:', err);
+      setIsLoading(false);
+      showMessage('error', 'Không thể đọc file Excel. Vui lòng kiểm tra lại định dạng file!');
+    } finally {
+      e.target.value = '';
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4 animate-fadeIn">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden text-slate-800">
         
-        {/* Header Modal */}
-        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-5 text-white flex items-center justify-between">
+        {/* HEADER */}
+        <div className="bg-[#003d75] text-white px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-white/10 rounded-xl border border-white/20">
-              <ShieldCheck className="w-6 h-6 text-amber-400" />
+            <div className="p-2 bg-white/10 rounded-xl">
+              <ShieldCheck className="w-6 h-6 text-amber-300" />
             </div>
             <div>
-              <h3 className="text-base font-bold">Trang Quản Trị Hệ Thống</h3>
-              <p className="text-xs text-blue-200">Tạo tài khoản cán bộ, Quản lý phòng ban &amp; Cấu hình thứ cấp giao việc</p>
+              <h3 className="font-bold text-lg">Trang Quản Trị Hệ Thống</h3>
+              <p className="text-xs text-blue-100">
+                Tạo tài khoản cán bộ, Quản lý phòng ban &amp; Cấu hình thứ cấp giao việc
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white cursor-pointer font-bold text-lg px-2"
+            className="p-1.5 text-blue-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer font-bold"
           >
             ✕
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-3 gap-4 text-xs font-bold">
+        {/* NAVIGATION TABS */}
+        <div className="border-b border-slate-200 bg-slate-50 px-6 flex gap-2 shrink-0">
           <button
             onClick={() => setActiveTab('accounts')}
-            className={`pb-3 border-b-2 flex items-center gap-2 cursor-pointer transition-all ${
+            className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
               activeTab === 'accounts'
-                ? 'border-[#005dac] text-[#005dac]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'border-[#005dac] text-[#005dac] bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>Quản lý Tài khoản ({accounts.length})</span>
+            Quản lý Tài khoản ({accounts.length})
           </button>
 
           <button
             onClick={() => setActiveTab('departments')}
-            className={`pb-3 border-b-2 flex items-center gap-2 cursor-pointer transition-all ${
+            className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
               activeTab === 'departments'
-                ? 'border-[#005dac] text-[#005dac]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'border-[#005dac] text-[#005dac] bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
             <Building2 className="w-4 h-4" />
-            <span>Quản lý Phòng Ban ({departments.length})</span>
+            Quản lý Phòng Ban ({departments.length})
           </button>
 
           <button
             onClick={() => setActiveTab('roles')}
-            className={`pb-3 border-b-2 flex items-center gap-2 cursor-pointer transition-all ${
+            className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
               activeTab === 'roles'
-                ? 'border-purple-600 text-purple-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'border-[#005dac] text-[#005dac] bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Sliders className="w-4 h-4 text-purple-600" />
-            <span>Quản lý Vai Trò &amp; Phân Cấp ({roles.length > 0 ? roles.length : 6})</span>
+            <Sliders className="w-4 h-4" />
+            Quản lý Vai Trò &amp; Phân Cấp ({roles.length})
           </button>
         </div>
 
-        {/* Message Banner */}
+        {/* NOTIFICATION MESSAGE */}
         {message && (
           <div
-            className={`mx-6 mt-4 p-3 rounded-xl text-xs font-medium flex items-center gap-2 ${
-              message.type === 'success'
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-rose-50 text-rose-800 border border-rose-200'
+            className={`px-6 py-2.5 text-xs font-medium flex items-center gap-2 shrink-0 ${
+              message.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-b border-emerald-200' : 'bg-rose-50 text-rose-800 border-b border-rose-200'
             }`}
           >
-            {message.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
+            {message.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600" />
+            )}
             <span>{message.text}</span>
           </div>
         )}
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        {/* BODY */}
+        <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'accounts' ? (
+            /* TAB QUẢN LÝ TÀI KHOẢN */
             <div className="space-y-6">
-              {/* Form Tạo Tài khoản mới */}
-              <form onSubmit={handleCreateAccount} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                  <UserPlus className="w-4 h-4 text-[#005dac]" />
-                  Tạo tài khoản mới
-                </h4>
+              {/* Form Tạo / Chỉnh Sửa Tài Khoản */}
+              <form onSubmit={handleSaveAccountSubmit} className={`border rounded-2xl p-4 space-y-4 transition-all ${
+                editingAccountId ? 'bg-amber-50/50 border-amber-300' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    {editingAccountId ? <Edit3 className="w-4 h-4 text-amber-600" /> : <UserPlus className="w-4 h-4 text-[#005dac]" />}
+                    {editingAccountId ? `Chỉnh sửa tài khoản: ${newUsername}` : 'Tạo tài khoản mới'}
+                  </h4>
+                  {editingAccountId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEditAccount}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                    >
+                      ✕ Hủy chỉnh sửa
+                    </button>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
@@ -314,14 +500,16 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Mật khẩu khởi tạo</label>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      {editingAccountId ? 'Mật khẩu mới (Để trống nếu giữ nguyên)' : 'Mật khẩu khởi tạo'}
+                    </label>
                     <input
                       type="text"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Mật khẩu"
+                      placeholder={editingAccountId ? 'Nhập nếu muốn đổi MK...' : 'Mật khẩu'}
                       className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-[#005dac]"
-                      required
+                      required={!editingAccountId}
                     />
                   </div>
 
@@ -382,15 +570,59 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="px-6 py-2 bg-[#005dac] hover:bg-[#004786] text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Lưu &amp; Tạo Tài Khoản
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDownloadAccountTemplate}
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                      title="Tải về file Excel mẫu 6 cột để nhập hàng loạt tài khoản"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      📄 Tải File Excel Mẫu
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => accountFileInputRef.current?.click()}
+                      disabled={isLoading}
+                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#005dac] border border-blue-300 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                      title="Chọn file Excel để import danh sách tài khoản"
+                    >
+                      <Upload className="w-4 h-4 text-[#005dac]" />
+                      📥 Import Excel Tài Khoản
+                    </button>
+
+                    <input
+                      type="file"
+                      ref={accountFileInputRef}
+                      onChange={handleAccountFileUpload}
+                      accept=".xlsx,.xls"
+                      className="hidden"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {editingAccountId && (
+                      <button
+                        type="button"
+                        onClick={handleCancelEditAccount}
+                        className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg text-xs transition-all cursor-pointer"
+                      >
+                        Hủy Bỏ
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className={`px-6 py-2 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer ${
+                        editingAccountId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-[#005dac] hover:bg-[#004786]'
+                      }`}
+                    >
+                      {editingAccountId ? <Edit3 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                      {editingAccountId ? 'Lưu Cập Nhật Tài Khoản' : 'Lưu & Tạo Tài Khoản'}
+                    </button>
+                  </div>
                 </div>
               </form>
 
@@ -406,6 +638,7 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
                       <tr>
                         <th className="p-2.5">Cán bộ</th>
                         <th className="p-2.5">Tên đăng nhập</th>
+                        <th className="p-2.5 text-center">Trạng thái</th>
                         <th className="p-2.5">Phòng / Ban</th>
                         <th className="p-2.5">Cấp Bậc Phân Cấp</th>
                         <th className="p-2.5">Vai trò ST</th>
@@ -415,10 +648,23 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
                     <tbody className="divide-y divide-slate-200 bg-white">
                       {accounts.map((acc) => {
                         const posInfo = POSITION_LABELS[acc.position_level || 'CHUYEN_VIEN'] || { label: acc.position_level || 'Chuyên viên', badge: 'bg-slate-100 text-slate-700 border-slate-300' };
+                        const isEditingThis = editingAccountId === acc.id;
+
                         return (
-                          <tr key={acc.id} className="hover:bg-slate-50 transition-colors">
+                          <tr key={acc.id} className={`transition-colors ${isEditingThis ? 'bg-amber-50/70' : 'hover:bg-slate-50'}`}>
                             <td className="p-2.5 font-bold text-slate-900">{acc.full_name}</td>
                             <td className="p-2.5 font-mono text-slate-600 font-medium">{acc.username}</td>
+                            <td className="p-2.5 text-center">
+                              {acc.is_active === 1 ? (
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-extrabold rounded text-[10px] border border-emerald-300">
+                                  🟢 Hoạt động
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-extrabold rounded text-[10px] border border-rose-300">
+                                  🔴 Đã khóa
+                                </span>
+                              )}
+                            </td>
                             <td className="p-2.5">
                               <span className="px-2 py-0.5 bg-blue-50 text-[#005dac] font-bold rounded text-[10px]">
                                 [{acc.department_code}] {acc.department_name}
@@ -443,15 +689,42 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
                               </span>
                             </td>
                             <td className="p-2.5 text-right">
-                              {acc.username !== 'admin' && (
+                              <div className="flex items-center justify-end gap-1">
                                 <button
-                                  onClick={() => handleDeleteAccount(acc)}
-                                  className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded cursor-pointer transition-colors"
-                                  title="Xóa tài khoản"
+                                  type="button"
+                                  onClick={() => handleStartEditAccount(acc)}
+                                  className="p-1 text-[#005dac] hover:text-blue-800 hover:bg-blue-50 rounded cursor-pointer transition-colors"
+                                  title="Chỉnh sửa tài khoản"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Edit3 className="w-4 h-4" />
                                 </button>
-                              )}
+
+                                {acc.username !== 'admin' && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleLockAccount(acc)}
+                                      className={`p-1 rounded cursor-pointer transition-colors ${
+                                        acc.is_active === 1
+                                          ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-50'
+                                          : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'
+                                      }`}
+                                      title={acc.is_active === 1 ? 'Khóa tài khoản này' : 'Mở khóa tài khoản'}
+                                    >
+                                      {acc.is_active === 1 ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteAccount(acc)}
+                                      className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded cursor-pointer transition-colors"
+                                      title="Xóa tài khoản"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

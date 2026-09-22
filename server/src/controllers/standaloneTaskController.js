@@ -297,47 +297,87 @@ export async function approveExtension(req, res) {
 }
 
 /**
- * Báo cáo Hoàn Thành Nhiệm Vụ (Khi kéo thả vào Drop Zone 2: Hoàn thành)
+ * Báo cáo Hoàn Thành Nhiệm Vụ & Tự động đồng bộ sang tất cả tài khoản liên quan
  */
 export async function completeTask(req, res) {
   try {
     const { task_id, account_id, completion_proof, proof_file_url } = req.body;
-    if (!task_id || !account_id) {
-      return res.status(400).json({ success: false, error: 'Thiếu thông tin task_id hoặc account_id' });
+    if (!task_id) {
+      return res.status(400).json({ success: false, error: 'Thiếu mã nhiệm vụ' });
     }
 
     const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
-    if (!task) return res.status(404).json({ success: false, error: 'Nhiệm vụ không tồn tại' });
+    if (!task) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy nhiệm vụ' });
+    }
 
+    // Update standalone task status to DA_HOAN_THANH
     db.prepare(`
       UPDATE standalone_tasks 
-      SET status = 'HOAN_THANH',
+      SET status = 'DA_HOAN_THANH',
           completion_proof = ?,
-          proof_file_url = COALESCE(?, proof_file_url),
-          updated_at = CURRENT_TIMESTAMP 
+          proof_file_url = COALESCE(NULLIF(?, ''), proof_file_url),
+          completed_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(completion_proof || '', proof_file_url || '', task_id);
 
-    // Notify Assigner
-    const assignerId = task.current_assigner_id || task.created_by;
-    const worker = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
-    db.prepare(`
-      INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message)
-      VALUES (?, ?, ?, 'TASK_COMPLETED', ?, ?)
-    `).run(
-      'notif_' + Date.now(),
-      assignerId,
-      account_id,
-      `Nhiệm vụ [${task.task_code}] đã được hoàn thành`,
-      `${worker ? worker.full_name : 'Cấp dưới'} đã báo cáo hoàn thành nhiệm vụ "${task.title}".`
-    );
+    // Synchronize linked tasks in weekly reports (tasks table)
+    try {
+      db.prepare(`
+        UPDATE tasks 
+        SET tien_do = 'Hoàn thành',
+            san_pham = COALESCE(NULLIF(?, ''), san_pham),
+            file_minh_chung = COALESCE(NULLIF(?, ''), file_minh_chung)
+        WHERE parent_task_id = ? OR id = ? OR (noi_dung = ? AND report_id IN (SELECT id FROM reports WHERE account_id = ?))
+      `).run(completion_proof || '', proof_file_url || '', task_id, task_id, task.title, task.current_assignee_id);
+    } catch (e) {
+      console.warn('Sync tasks error:', e);
+    }
 
-    res.json({ success: true, message: 'Nhiệm vụ đã báo cáo hoàn thành' });
+    // Send notifications to assigner & assigned assignees
+    const completer = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
+    const completerName = completer ? completer.full_name : 'Cán bộ';
+
+    let assignees = [];
+    try {
+      assignees = JSON.parse(task.assigned_assignees || '[]');
+    } catch (e) {
+      assignees = [];
+    }
+
+    const recipientIds = new Set();
+    const assignerId = task.current_assigner_id || task.created_by;
+    if (assignerId && assignerId !== account_id) {
+      recipientIds.add(assignerId);
+    }
+    assignees.forEach(a => {
+      if (a.account_id && a.account_id !== account_id) {
+        recipientIds.add(a.account_id);
+      }
+    });
+
+    for (const recipientId of recipientIds) {
+      const notifId = 'notif_cmp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
+      db.prepare(`
+        INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message)
+        VALUES (?, ?, ?, 'TASK_COMPLETED', ?, ?)
+      `).run(
+        notifId,
+        recipientId,
+        account_id || 'acc_admin',
+        `✅ Nhiệm vụ [${task.task_code}] đã được hoàn thành`,
+        `${completerName} đã nộp báo cáo hoàn thành nhiệm vụ: "${task.title}".`
+      );
+    }
+
+    res.json({ success: true, message: 'Đã hoàn thành nhiệm vụ và đồng bộ tự động tới tất cả các tài khoản liên quan!' });
   } catch (error) {
     console.error('Lỗi completeTask standalone:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 }
+
 
 /**
  * Đồng bộ danh sách Nhiệm vụ Phân cấp dành riêng cho Báo cáo Tuần của Chuyên viên
@@ -509,7 +549,7 @@ export async function publishPlan(req, res) {
  */
 export async function stageAssignee(req, res) {
   try {
-    const { task_id, assignee_id, position_level, instruction_note } = req.body;
+    const { task_id, assignee_id, position_level, instruction_note, assigner_id, assigned_date } = req.body;
     if (!task_id || !assignee_id || !position_level) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin tạm ứng người nhận' });
     }
@@ -531,6 +571,16 @@ export async function stageAssignee(req, res) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người nhận' });
     }
 
+    let assignerName = 'Cấp trên';
+    if (assigner_id) {
+      const assignerAcc = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
+      if (assignerAcc) {
+        assignerName = assignerAcc.full_name;
+      }
+    }
+
+    const todayDate = assigned_date || new Date().toISOString().split('T')[0];
+
     const exists = assignees.some(a => a.account_id === assignee_id);
     if (!exists) {
       assignees.push({
@@ -538,6 +588,9 @@ export async function stageAssignee(req, res) {
         full_name: assigneeAccount.full_name,
         position_level: position_level || assigneeAccount.position_level,
         instruction_note: instruction_note || '',
+        assigner_id: assigner_id || null,
+        assigner_name: assignerName,
+        assigned_date: todayDate,
         is_primary: assignees.length === 0
       });
     }
@@ -546,9 +599,12 @@ export async function stageAssignee(req, res) {
 
     db.prepare(`
       UPDATE standalone_tasks 
-      SET assigned_assignees = ?, target_position_level = ?, updated_at = CURRENT_TIMESTAMP
+      SET assigned_assignees = ?, 
+          target_position_level = ?, 
+          current_assigner_id = COALESCE(?, current_assigner_id),
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(JSON.stringify(assignees), targetLevels, task_id);
+    `).run(JSON.stringify(assignees), targetLevels, assigner_id || null, task_id);
 
     res.json({ success: true, message: 'Đã tạm chọn người nhận', assignees });
   } catch (error) {
@@ -556,6 +612,116 @@ export async function stageAssignee(req, res) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
+
+/**
+ * Giao hàng loạt danh sách nhiệm vụ (Bulk Stage Assignee)
+ */
+export async function bulkStageAssignee(req, res) {
+  try {
+    const { task_ids, assignee_id, position_level, instruction_note, assigner_id, assigned_date, due_date } = req.body;
+
+    if (!Array.isArray(task_ids) || task_ids.length === 0 || !assignee_id || !position_level) {
+      return res.status(400).json({ success: false, error: 'Thông tin giao việc hàng loạt không đầy đủ' });
+    }
+
+    const assigneeAccount = db.prepare('SELECT id, full_name, position_level FROM accounts WHERE id = ?').get(assignee_id);
+    if (!assigneeAccount) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người nhận' });
+    }
+
+    let assignerName = 'Cấp trên';
+    if (assigner_id) {
+      const assignerAcc = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
+      if (assignerAcc) {
+        assignerName = assignerAcc.full_name;
+      }
+    }
+
+    const todayDate = assigned_date || new Date().toISOString().split('T')[0];
+    let updatedCount = 0;
+
+    db.exec('BEGIN TRANSACTION;');
+
+    try {
+      for (const taskId of task_ids) {
+        const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(taskId);
+        if (!task) continue;
+
+        let assignees = [];
+        try {
+          assignees = JSON.parse(task.assigned_assignees || '[]');
+        } catch (e) {
+          assignees = [];
+        }
+
+        const exists = assignees.some(a => a.account_id === assignee_id);
+        if (!exists) {
+          assignees.push({
+            account_id: assignee_id,
+            full_name: assigneeAccount.full_name,
+            position_level: position_level || assigneeAccount.position_level,
+            instruction_note: instruction_note || '',
+            assigner_id: assigner_id || null,
+            assigner_name: assignerName,
+            assigned_date: todayDate,
+            is_primary: assignees.length === 0
+          });
+        }
+
+        const targetLevels = Array.from(new Set(assignees.map(a => a.position_level))).join(',');
+
+        db.prepare(`
+          UPDATE standalone_tasks 
+          SET assigned_assignees = ?, 
+              target_position_level = ?, 
+              current_assigner_id = COALESCE(?, current_assigner_id),
+              due_date = COALESCE(?, due_date),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(JSON.stringify(assignees), targetLevels, assigner_id || null, due_date || null, taskId);
+
+        updatedCount++;
+      }
+
+      db.exec('COMMIT;');
+      res.json({ success: true, count: updatedCount, message: `Đã giao thành công ${updatedCount} nhiệm vụ cho ${assigneeAccount.full_name}` });
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+  } catch (error) {
+    console.error('Lỗi bulkStageAssignee:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Xóa hàng loạt nhiệm vụ khỏi Kho Chung (Bulk Delete Tasks)
+ */
+export async function bulkDeleteTasks(req, res) {
+  try {
+    const { task_ids } = req.body;
+    if (!Array.isArray(task_ids) || task_ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Thiếu mảng ID nhiệm vụ cần xóa' });
+    }
+
+    db.exec('BEGIN TRANSACTION;');
+
+    try {
+      const placeholders = task_ids.map(() => '?').join(',');
+      db.prepare(`DELETE FROM standalone_tasks WHERE id IN (${placeholders})`).run(...task_ids);
+      db.exec('COMMIT;');
+      res.json({ success: true, count: task_ids.length, message: `Đã xóa thành công ${task_ids.length} nhiệm vụ khỏi Kho Chung` });
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+  } catch (error) {
+    console.error('Lỗi bulkDeleteTasks:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 
 /**
  * Xóa 1 người nhận khỏi danh sách tạm ứng (Unstaging)
@@ -628,3 +794,64 @@ export async function dismissPoolTask(req, res) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
+
+/**
+ * Import hàng loạt nhiệm vụ từ Excel Sổ Văn Bản Đến vào Kho Chung
+ */
+export async function batchImportTasks(req, res) {
+  try {
+    const { tasks, created_by } = req.body;
+    if (!Array.isArray(tasks) || tasks.length === 0 || !created_by) {
+      return res.status(400).json({ success: false, error: 'Thiếu danh sách nhiệm vụ hoặc người tạo' });
+    }
+
+    let importedCount = 0;
+    const currentYear = new Date().getFullYear();
+
+    const insertStmt = db.prepare(`
+      INSERT INTO standalone_tasks (
+        id, task_code, title, description, created_by, priority, status, due_date
+      ) VALUES (?, ?, ?, ?, ?, ?, 'KHO_VIEC', ?)
+    `);
+
+    db.exec('BEGIN TRANSACTION;');
+
+    try {
+      for (const t of tasks) {
+        if (!t.title || !t.title.trim()) continue;
+
+        const count = db.prepare('SELECT COUNT(*) as c FROM standalone_tasks').get().c + 1;
+        const taskId = 'task_st_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '_' + importedCount;
+        
+        let taskCode = t.task_code;
+        if (!taskCode) {
+          taskCode = `NV-${currentYear}-${String(count).padStart(3, '0')}`;
+        }
+
+        insertStmt.run(
+          taskId,
+          taskCode,
+          t.title.trim(),
+          t.description || '',
+          created_by,
+          t.priority || 'THUONG',
+          t.due_date || null
+        );
+        importedCount++;
+      }
+
+      db.exec('COMMIT;');
+      res.json({ success: true, count: importedCount, message: `Đã import thành công ${importedCount} nhiệm vụ vào Kho Chung!` });
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+  } catch (error) {
+    console.error('Lỗi batchImportTasks standalone:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+
+
+

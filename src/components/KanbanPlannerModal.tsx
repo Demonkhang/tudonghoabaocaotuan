@@ -112,7 +112,7 @@ export function KanbanPlannerModal({
       // 1. Candidate tasks from CSDL (across all past reports for this department)
       const deptId = currentUser?.department_id || 'dept_vp';
       try {
-        const dbRes = await fetchCandidateTasks(deptId);
+        const dbRes = await fetchCandidateTasks(deptId, currentUser?.id);
         if (dbRes && dbRes.success && Array.isArray(dbRes.tasks)) {
           dbRes.tasks.forEach((t: any) => {
             const lowerProgress = (t.tien_do || '').toLowerCase().trim();
@@ -120,16 +120,16 @@ export function KanbanPlannerModal({
               addUniqueItem({
                 id: `k_db_${t.id}`,
                 noi_dung: t.noi_dung,
-                nhom: t.category || 'Thường xuyên',
+                nhom: t.category || t.nhom || 'Thường xuyên',
                 thoi_gian: t.thoi_gian || 'Trong tuần',
                 trien_khai: t.trien_khai || '',
                 tien_do: t.tien_do || 'Đang thực hiện',
                 san_pham: t.san_pham || '',
                 file_minh_chung: t.file_minh_chung || '',
                 file_original_name: t.file_original_name || '',
-                source: 'unfinished_table1',
-                originalTable: t.table_type,
-                parent_task_id: t.id
+                source: t.source || 'unfinished_table1',
+                originalTable: t.table_type || 1,
+                parent_task_id: t.standalone_task_id || t.id
               });
             }
           });

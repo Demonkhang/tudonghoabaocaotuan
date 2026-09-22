@@ -11,9 +11,10 @@ interface HeaderProps {
   recentlyCreatedWeek?: number | null;
   currentUser?: { id: string; username: string; full_name: string } | null;
   onSelectReport?: (reportId: string) => void;
+  onOpenUserProfile?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ metadata, recentlyCreatedWeek, currentUser, onSelectReport }) => {
+export const Header: React.FC<HeaderProps> = ({ metadata, recentlyCreatedWeek, currentUser, onSelectReport, onOpenUserProfile }) => {
   const isRecentlyCreated = recentlyCreatedWeek && metadata.tuan === recentlyCreatedWeek;
   const { isDarkMode, toggleDarkMode } = useDarkMode();
 
@@ -42,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({ metadata, recentlyCreatedWeek, c
         {/* Dark Mode Toggle Button */}
         <button
           onClick={toggleDarkMode}
-          className="bg-white/10 hover:bg-white/20 dark:bg-slate-700/50 dark:hover:bg-slate-700 active:scale-95 transition-all p-2 rounded-xl border border-white/20 dark:border-slate-600 backdrop-blur-md text-white shadow-xs flex items-center justify-center group"
+          className="bg-white/10 hover:bg-white/20 dark:bg-slate-700/50 dark:hover:bg-slate-700 active:scale-95 transition-all p-2 rounded-xl border border-white/20 dark:border-slate-600 backdrop-blur-md text-white shadow-xs flex items-center justify-center group cursor-pointer"
           title={isDarkMode ? 'Chuyển sang Giao diện Sáng (Light Mode)' : 'Chuyển sang Giao diện Tối (Dark Mode)'}
         >
           {isDarkMode ? (
@@ -60,7 +61,13 @@ export const Header: React.FC<HeaderProps> = ({ metadata, recentlyCreatedWeek, c
         )}
 
         {/* Current User & Report Status Badge */}
-        <div className="flex items-center gap-3 bg-white/10 hover:bg-white/15 dark:bg-slate-700/50 transition-all px-3.5 py-1.5 rounded-xl border border-white/20 dark:border-slate-600 backdrop-blur-md shadow-xs">
+        <div
+          onClick={onOpenUserProfile}
+          title="Click để xem & cập nhật thông tin cá nhân"
+          className={`flex items-center gap-3 bg-white/10 hover:bg-white/20 dark:bg-slate-700/50 dark:hover:bg-slate-700/80 active:scale-98 transition-all px-3.5 py-1.5 rounded-xl border border-white/20 dark:border-slate-600 backdrop-blur-md shadow-xs ${
+            onOpenUserProfile ? 'cursor-pointer hover:border-white/40' : ''
+          }`}
+        >
           <div className="flex flex-col items-end leading-tight">
             <div className="flex items-center gap-1.5">
               <span className="font-extrabold text-sm tracking-tight text-white">

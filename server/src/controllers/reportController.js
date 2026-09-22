@@ -113,6 +113,204 @@ export async function createAccount(req, res) {
 }
 
 /**
+ * 2c2. Quản trị: Cập nhật thông tin tài khoản
+ */
+export async function updateAccount(req, res) {
+  try {
+    const { id } = req.params;
+    const { username, password, full_name, department_id, role, position_level, is_active } = req.body;
+
+    if (!id || !username || !full_name || !department_id) {
+      return res.status(400).json({ success: false, error: 'Vui lòng điền đầy đủ thông tin tài khoản' });
+    }
+
+    const existing = db.prepare('SELECT id FROM accounts WHERE username = ? AND id != ?').get(username, id);
+    if (existing) {
+      return res.status(400).json({ success: false, error: `Tên đăng nhập "${username}" đã được sử dụng bởi tài khoản khác!` });
+    }
+
+    const posLevel = position_level || 'CHUYEN_VIEN';
+    const activeState = is_active !== undefined ? Number(is_active) : 1;
+
+    if (password && password.trim()) {
+      db.prepare(`
+        UPDATE accounts
+        SET username = ?, password = ?, full_name = ?, department_id = ?, role = ?, position_level = ?, is_active = ?
+        WHERE id = ?
+      `).run(username, password.trim(), full_name, department_id, role || 'STAFF', posLevel, activeState, id);
+    } else {
+      db.prepare(`
+        UPDATE accounts
+        SET username = ?, full_name = ?, department_id = ?, role = ?, position_level = ?, is_active = ?
+        WHERE id = ?
+      `).run(username, full_name, department_id, role || 'STAFF', posLevel, activeState, id);
+    }
+
+    return res.json({ success: true, message: 'Cập nhật tài khoản thành công!' });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * 2c3. Quản trị: Khóa / Mở khóa tài khoản
+ */
+export async function toggleAccountStatus(req, res) {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Thiếu ID tài khoản' });
+    }
+
+    const account = db.prepare('SELECT id, username, is_active FROM accounts WHERE id = ?').get(id);
+    if (!account) {
+      return res.status(404).json({ success: false, error: 'Tài khoản không tồn tại' });
+    }
+
+    if (account.username === 'admin') {
+      return res.status(400).json({ success: false, error: 'Không thể khóa tài khoản Quản trị viên hệ thống (admin)!' });
+    }
+
+    const newStatus = account.is_active === 1 ? 0 : 1;
+    db.prepare('UPDATE accounts SET is_active = ? WHERE id = ?').run(newStatus, id);
+
+    return res.json({
+      success: true,
+      is_active: newStatus,
+      message: newStatus === 1 ? 'Đã mở khóa tài khoản thành công!' : 'Đã khóa tài khoản thành công!'
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * 2c4. Quản trị: Import hàng loạt tài khoản từ Excel
+ */
+export async function bulkImportAccounts(req, res) {
+  try {
+    const { accounts } = req.body;
+    if (!Array.isArray(accounts) || accounts.length === 0) {
+      return res.status(400).json({ success: false, error: 'Danh sách tài khoản import rỗng hoặc không hợp lệ' });
+    }
+
+    const depts = db.prepare('SELECT id, code, name FROM departments').all();
+    const deptMapByCode = new Map();
+    const deptMapByName = new Map();
+    depts.forEach(d => {
+      deptMapByCode.set(String(d.code).trim().toLowerCase(), d.id);
+      deptMapByName.set(String(d.name).trim().toLowerCase(), d.id);
+    });
+
+    const existingAccounts = db.prepare('SELECT username FROM accounts').all();
+    const existingUsernames = new Set(existingAccounts.map(a => String(a.username).trim().toLowerCase()));
+
+    let importedCount = 0;
+    let skippedCount = 0;
+    const skippedDetails = [];
+
+    const insertStmt = db.prepare(`
+      INSERT INTO accounts (id, department_id, username, password, full_name, role, position_level, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `);
+
+    const runImport = db.transaction((items) => {
+      for (const item of items) {
+        const uName = String(item.username || '').trim();
+        const pwd = String(item.password || '').trim();
+        const fullName = String(item.full_name || item.fullName || '').trim();
+        const deptCode = String(item.department_code || item.deptCode || item.department_id || '').trim();
+        const posLevel = String(item.position_level || item.posLevel || 'CHUYEN_VIEN').trim();
+        const role = String(item.role || 'STAFF').trim();
+
+        if (!uName || !pwd || !fullName) {
+          skippedCount++;
+          skippedDetails.push(`Bỏ qua tài khoản thiếu thông tin (Username/Mật khẩu/Họ tên): ${uName || 'N/A'}`);
+          continue;
+        }
+
+        if (existingUsernames.has(uName.toLowerCase())) {
+          skippedCount++;
+          skippedDetails.push(`Tên đăng nhập "${uName}" đã tồn tại trên hệ thống.`);
+          continue;
+        }
+
+        let deptId = deptMapByCode.get(deptCode.toLowerCase()) || deptMapByName.get(deptCode.toLowerCase());
+        if (!deptId && depts.length > 0) {
+          deptId = depts[0].id;
+        }
+
+        const newId = `acc_${uName}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+        insertStmt.run(newId, deptId, uName, pwd, fullName, role, posLevel);
+        existingUsernames.add(uName.toLowerCase());
+        importedCount++;
+      }
+    });
+
+    runImport(accounts);
+
+    return res.json({
+      success: true,
+      importedCount,
+      skippedCount,
+      skippedDetails,
+      message: `Đã import thành công ${importedCount} tài khoản.${skippedCount > 0 ? ` Bỏ qua ${skippedCount} tài khoản trùng hoặc thiếu dữ liệu.` : ''}`
+    });
+  } catch (error) {
+    console.error('Lỗi bulkImportAccounts:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Cập nhật thông tin cá nhân (Profile Update)
+ */
+export async function updateUserProfile(req, res) {
+  try {
+    const { userId, full_name, password } = req.body;
+    if (!userId || !full_name) {
+      return res.status(400).json({ success: false, error: 'Vui lòng cung cấp ID người dùng và Họ tên' });
+    }
+
+    const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(userId);
+    if (!account) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy thông tin người dùng' });
+    }
+
+    if (password && password.trim()) {
+      db.prepare('UPDATE accounts SET full_name = ?, password = ? WHERE id = ?').run(full_name.trim(), password.trim(), userId);
+    } else {
+      db.prepare('UPDATE accounts SET full_name = ? WHERE id = ?').run(full_name.trim(), userId);
+    }
+
+    const updated = db.prepare(`
+      SELECT a.id, a.username, a.full_name, a.role, a.position_level, a.department_id, d.name as department_name, d.code as department_code
+      FROM accounts a
+      JOIN departments d ON a.department_id = d.id
+      WHERE a.id = ?
+    `).get(userId);
+
+    return res.json({
+      success: true,
+      message: 'Cập nhật thông tin cá nhân thành công!',
+      user: {
+        id: updated.id,
+        username: updated.username,
+        full_name: updated.full_name,
+        role: updated.role,
+        position_level: updated.position_level || 'CHUYEN_VIEN',
+        department_id: updated.department_id,
+        department_name: updated.department_name,
+        department_code: updated.department_code
+      }
+    });
+  } catch (error) {
+    console.error('Lỗi updateUserProfile:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
  * 2d. Quản trị: Lấy và khởi tạo danh sách Vai Trò & Phân Cấp
  */
 export async function getRoles(req, res) {
@@ -900,9 +1098,9 @@ export async function getCandidateTasks(req, res) {
     const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId);
     const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
-    let tasks = [];
+    let reportTasks = [];
     if (isAdmin && department_id) {
-      tasks = db.prepare(`
+      reportTasks = db.prepare(`
         SELECT t.*, r.week_number, r.year
         FROM tasks t
         JOIN reports r ON t.report_id = r.id
@@ -917,7 +1115,7 @@ export async function getCandidateTasks(req, res) {
         ORDER BY r.year DESC, r.week_number DESC, t.order_index ASC
       `).all(currentUserId, department_id);
     } else {
-      tasks = db.prepare(`
+      reportTasks = db.prepare(`
         SELECT t.*, r.week_number, r.year
         FROM tasks t
         JOIN reports r ON t.report_id = r.id
@@ -933,10 +1131,50 @@ export async function getCandidateTasks(req, res) {
       `).all(currentUserId);
     }
 
-    return res.json({ success: true, tasks });
+    // Fetch standalone tasks assigned to this user that are dispatched and not finished
+    let standaloneTasks = [];
+    try {
+      standaloneTasks = db.prepare(`
+        SELECT * FROM standalone_tasks
+        WHERE is_dispatched = 1
+          AND (status IS NULL OR (status != 'DA_HOAN_THANH' AND status != 'DA_HUY'))
+          AND (current_assignee_id = ? OR assigned_assignees LIKE ?)
+        ORDER BY created_at DESC
+      `).all(currentUserId, `%${currentUserId}%`);
+    } catch (e) {
+      console.warn('Error fetching standalone tasks for candidates:', e);
+      standaloneTasks = [];
+    }
+
+    // Map standalone tasks to candidate task items
+    const mappedStandalone = standaloneTasks.map(st => {
+      let assignerName = 'Lãnh đạo';
+      if (st.current_assigner_id) {
+        const assigner = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(st.current_assigner_id);
+        if (assigner) assignerName = assigner.full_name;
+      }
+      return {
+        id: `st_${st.id}`,
+        noi_dung: `[${st.task_code}] ${st.title}`,
+        nhom: st.priority === 'KHAN_CAP' || st.priority === 'KHAN' ? 'Đột xuất' : 'Thường xuyên',
+        thoi_gian: st.due_date ? `Hạn: ${st.due_date}` : 'Trong tuần',
+        trien_khai: st.description || `Phân công bởi ${assignerName}`,
+        tien_do: st.status === 'DA_GIAO' ? 'Đang thực hiện' : (st.status || 'Đang thực hiện'),
+        san_pham: st.completion_proof || '',
+        file_minh_chung: st.proof_file_url || '',
+        table_type: 1,
+        category: 'Đột xuất',
+        source: 'standalone_assigned',
+        standalone_task_id: st.id,
+        task_code: st.task_code
+      };
+    });
+
+    return res.json({ success: true, tasks: [...mappedStandalone, ...reportTasks] });
   } catch (error) {
     console.error('Lỗi getCandidateTasks:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
+
 
