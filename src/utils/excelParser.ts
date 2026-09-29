@@ -7,9 +7,6 @@ export interface ParsedSheetData {
   fileName: string;
 }
 
-
-
-
 interface ColumnMapTable1 {
   colNoiDung: number;
   colThoiGian: number;
@@ -21,6 +18,24 @@ interface ColumnMapTable2 {
   colNoiDung: number;
   colThoiGian: number;
   colSanPham: number;
+}
+
+function cleanHtmlString(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/<[^>]*>/g, '')
+    .replace(/&#37;/g, '%')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#\d+;/g, (match) => {
+      const code = parseInt(match.replace(/&#|;/g, ''), 10);
+      return isNaN(code) ? match : String.fromCharCode(code);
+    })
+    .trim();
 }
 
 /**
@@ -42,7 +57,7 @@ function formatExcelCellValue(cellVal: any): string {
       // ignore error
     }
   }
-  return String(cellVal).trim();
+  return cleanHtmlString(String(cellVal));
 }
 
 /**
@@ -64,6 +79,8 @@ export async function parseExcelFile(file: File): Promise<ParsedSheetData> {
         workbook.SheetNames.forEach((sheetName) => {
           const sheet = workbook.Sheets[sheetName];
           if (!sheet) return;
+
+          fixSheetRange(sheet);
 
           const rawRows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
           if (!rawRows || rawRows.length === 0) return;
@@ -400,38 +417,25 @@ function fallbackParse(workbook: XLSX.WorkBook, outT1: TaskTable1[], outT2: Task
 export function downloadExcelTemplate() {
   const wb = XLSX.utils.book_new();
 
-  // Tạo mảng dữ liệu theo đúng cấu trúc từ hình ảnh người dùng cung cấp
   const sheetData = [
-    // Hàng 1: Tiêu đề Bảng I
     ["I. Kết quả thực hiện công tác Tuần 28", "", "", ""],
-    // Hàng 2: Tiêu đề các cột Bảng I
     ["Nội dung nhiệm vụ/ công tác được giao", "Thời gian được giao hoàn thiện nhiệm vụ", "Triển khai thực hiện", "Tiến độ thực hiện"],
-    // Hàng 3: Subheader Nhóm thường xuyên Bảng I
     ["Nhiệm vụ thường xuyên ( ... / .... Nhiệm vụ hoàn thành/tổng số nhiệm vụ được giao trong tuần)", "", "", ""],
-    // Hàng 4 - 7: Dòng nhiệm vụ Thường xuyên mẫu Bảng I
     ["V/v rà soát nhu cầu đăng ký và cam kết hoàn thành kế hoạch", "22/07/2026", "báo cáo", "Hoàn thành"],
     ["V/v rà soát nhu cầu đăng ký và cam kết hoàn thành kế hoạch", "22/07/2026", "báo cáo", "Hoàn thành"],
     ["V/v rà soát nhu cầu đăng ký và cam kết hoàn thành kế hoạch", "22/07/2026", "báo cáo", "Hoàn thành"],
     ["V/v rà soát nhu cầu đăng ký và cam kết hoàn thành kế hoạch", "22/07/2026", "báo cáo", "Hoàn thành"],
-    // Hàng 8: Subheader Nhóm Đột xuất Bảng I
     ["Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản...) (.../...Nhiệm vụ, công văn hoàn thành/tổng số nhiệm vụ, công văn được giao trong tuần)", "", "", ""],
-    // Hàng 9 - 11: Dòng nhiệm vụ Đột xuất mẫu Bảng I
     ["V/v rà soát nhu cầu đăng ký và cam kết hoàn thành kế hoạch", "22/07/2026", "báo cáo", "Hoàn thành"],
     ["V/v rà soát nhu cầu đăng ký và cam kết hoàn thành kế hoạch", "22/07/2026", "báo cáo", "Hoàn thành"],
     ["V/v rà soát nhu cầu đăng ký và cam kết hoàn thành kế hoạch", "22/07/2026", "báo cáo", "Hoàn thành"],
-    // Hàng 12: Tiêu đề Bảng II
     ["II. Kế hoạch thực hiện công tác Tuần 29 (Tuần tiếp theo)", "", "", ""],
-    // Hàng 13: Subheader Nhóm thường xuyên Bảng II
     ["Nhiệm vụ thường xuyên", "", "", ""],
-    // Hàng 14: Tiêu đề các cột Bảng II
     ["Nhiệm vụ/công tác", "Thời gian dự kiến hoàn thành", "Nội dung và sản phẩm dự kiến thực hiện", ""],
-    // Hàng 15 - 17: Dòng nhiệm vụ Thường xuyên mẫu Bảng II
     ["Ban hành kế hoạch Rà soát, triển khai các nội dung trọng tâm", "23/07/2026", "Kế hoạch", ""],
     ["Ban hành kế hoạch Rà soát, triển khai các nội dung trọng tâm", "23/07/2026", "Kế hoạch", ""],
     ["Ban hành kế hoạch Rà soát, triển khai các nội dung trọng tâm", "23/07/2026", "Kế hoạch", ""],
-    // Hàng 18: Subheader Nhóm Đột xuất Bảng II
     ["Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản...) (.../...Nhiệm vụ, công văn hoàn thành/tổng số nhiệm vụ, công văn được giao trong tuần)", "", "", ""],
-    // Hàng 19 - 21: Dòng nhiệm vụ Đột xuất mẫu Bảng II
     ["Ban hành kế hoạch Rà soát, triển khai các nội dung trọng tâm", "23/07/2026", "Kế hoạch", ""],
     ["Ban hành kế hoạch Rà soát, triển khai các nội dung trọng tâm", "23/07/2026", "Kế hoạch", ""],
     ["Ban hành kế hoạch Rà soát, triển khai các nội dung trọng tâm", "23/07/2026", "Kế hoạch", ""]
@@ -439,16 +443,14 @@ export function downloadExcelTemplate() {
 
   const ws = XLSX.utils.aoa_to_sheet(sheetData);
 
-  // Thiết lập độ rộng cột hợp lý
   ws['!cols'] = [
-    { wch: 45 }, // Cột 1: Nội dung
-    { wch: 25 }, // Cột 2: Thời gian
-    { wch: 35 }, // Cột 3: Triển khai / Sản phẩm
-    { wch: 20 }  // Cột 4: Tiến độ
+    { wch: 45 },
+    { wch: 25 },
+    { wch: 35 },
+    { wch: 20 }
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, "Báo cáo công tác tuần");
-
   XLSX.writeFile(wb, "Mau_Bao_Cao_Tuan_Co_Quan_Chuan.xlsx");
 }
 
@@ -493,6 +495,33 @@ export function buildIncomingDocDescription(item: Partial<IncomingDocTask>): str
 }
 
 /**
+ * Tự động sửa lại phạm vi sheet['!ref'] bằng cách quét tất cả các cell thực tế có trong sheet.
+ * Khắc phục lỗi file Excel từ các hệ thống xuất có thẻ <dimension ref="..."> bị sai/lỗi thời
+ * khiến thư viện SheetJS chỉ đọc một vài dòng đầu và bỏ qua dữ liệu bên dưới.
+ */
+export function fixSheetRange(sheet: XLSX.WorkSheet) {
+  if (!sheet) return;
+  let minRow = Infinity, maxRow = -1;
+  let minCol = Infinity, maxCol = -1;
+
+  for (const key of Object.keys(sheet)) {
+    if (key.startsWith('!')) continue;
+    const cell = XLSX.utils.decode_cell(key);
+    if (cell.r < minRow) minRow = cell.r;
+    if (cell.r > maxRow) maxRow = cell.r;
+    if (cell.c < minCol) minCol = cell.c;
+    if (cell.c > maxCol) maxCol = cell.c;
+  }
+
+  if (maxRow >= 0 && maxCol >= 0) {
+    sheet['!ref'] = XLSX.utils.encode_range({
+      s: { r: minRow === Infinity ? 0 : minRow, c: minCol === Infinity ? 0 : minCol },
+      e: { r: maxRow, c: maxCol }
+    });
+  }
+}
+
+/**
  * Phân tích file Excel Sổ Văn Bản Đến (.xlsx, .xls) và Kiểm tra trùng lặp
  */
 export async function parseIncomingDocExcel(
@@ -507,185 +536,231 @@ export async function parseIncomingDocExcel(
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
 
-        const result: IncomingDocTask[] = [];
-
-        // Ưu tiên chọn sheet tên "VB đến" hoặc "VB den", nếu không thì lấy sheet đầu tiên
-        let targetSheetName = workbook.SheetNames.find(
-          name => name.trim().toLowerCase() === 'vb đến' || name.trim().toLowerCase() === 'vb den'
-        );
-        if (!targetSheetName) {
-          targetSheetName = workbook.SheetNames[0];
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          throw new Error('File Excel không có dữ liệu sheet nào.');
         }
 
-        if (!targetSheetName) throw new Error('File Excel không có dữ liệu sheet nào.');
+        let bestResult: { tasks: IncomingDocTask[]; duplicateCount: number } | null = null;
+        let bestTaskCount = -1;
 
-        const sheet = workbook.Sheets[targetSheetName];
-        const rawRows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          if (!sheet) continue;
 
-        if (!rawRows || rawRows.length === 0) {
-          throw new Error('Sheet Excel trống không có dữ liệu.');
-        }
+          fixSheetRange(sheet);
 
-        // Tìm dòng header (chứa ít nhất "ngày đến", "số đến", "trích yếu"...)
-        let headerRowIndex = -1;
-        let foundHeadersCount = 0;
-        let colNgayDen = 0;
-        let colSoDen = 1;
-        let colTacGia = 2;
-        let colSoKyHieu = 3;
-        let colNgayVanBan = 4;
-        let colTrichYeu = 5;
-        let colDonViNhan = 6;
-        let colLoaiVanBan = 9;
-        let colDoKhan = 10;
-        let colLinhVuc = 11;
-        let colXuLyChinh = 12;
+          const rawRows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+          if (!rawRows || rawRows.length === 0) continue;
 
-        for (let r = 0; r < Math.min(15, rawRows.length); r++) {
-          const rowStr = rawRows[r].map(c => String(c).toLowerCase()).join(' ');
-          let matchesInRow = 0;
-          if (rowStr.includes('ngày đến') || rowStr.includes('ngay den')) matchesInRow++;
-          if (rowStr.includes('số đến') || rowStr.includes('so den')) matchesInRow++;
-          if (rowStr.includes('trích yếu') || rowStr.includes('nội dung') || rowStr.includes('trich yeu')) matchesInRow++;
-          if (rowStr.includes('ký hiệu') || rowStr.includes('ky hieu')) matchesInRow++;
-          if (rowStr.includes('xử lý chính') || rowStr.includes('xu ly chinh')) matchesInRow++;
+          let headerRowIndex = -1;
+          let colNgayDen = -1;
+          let colSoDen = -1;
+          let colTacGia = -1;
+          let colSoKyHieu = -1;
+          let colNgayVanBan = -1;
+          let colTrichYeu = -1;
+          let colDonViNhan = -1;
+          let colLoaiVanBan = -1;
+          let colDoKhan = -1;
+          let colLinhVuc = -1;
+          let colXuLyChinh = -1;
 
-          if (matchesInRow >= 2) {
-            headerRowIndex = r;
-            foundHeadersCount = matchesInRow;
-            // Map chính xác vị trí các cột dựa trên header tìm thấy
-            rawRows[r].forEach((cellVal: any, cIdx: number) => {
-              const str = String(cellVal).toLowerCase().trim();
-              if (str.includes('ngày đến') || str === 'ngày đến') colNgayDen = cIdx;
-              else if (str.includes('số đến') || str === 'số đến') colSoDen = cIdx;
-              else if (str.includes('tác giả')) colTacGia = cIdx;
-              else if (str.includes('ký hiệu') || str.includes('số, ký hiệu')) colSoKyHieu = cIdx;
-              else if (str.includes('ngày tháng') || str.includes('ngày văn bản')) colNgayVanBan = cIdx;
-              else if (str.includes('trích yếu') || str.includes('nội dung')) colTrichYeu = cIdx;
-              else if (str.includes('người nhận') || str.includes('đơn vị')) colDonViNhan = cIdx;
-              else if (str.includes('loại văn bản')) colLoaiVanBan = cIdx;
-              else if (str.includes('độ khẩn')) colDoKhan = cIdx;
-              else if (str.includes('lĩnh vực')) colLinhVuc = cIdx;
-              else if (str.includes('xử lý chính') || str.includes('xu ly chinh')) colXuLyChinh = cIdx;
+          // 1. Quét tìm dòng chứa Header (Quét an toàn ép kiểu String)
+          for (let r = 0; r < Math.min(15, rawRows.length); r++) {
+            const row = rawRows[r];
+            if (!row || row.length === 0) continue;
+
+            let matchingCellsCount = 0;
+            row.forEach((cellVal: any) => {
+              const str = String(cellVal || '').toLowerCase().trim();
+              if (!str) return;
+              if (
+                str.includes('ngày đến') || str.includes('ngay den') || str.includes('ngày nhận') ||
+                str.includes('số đến') || str.includes('so den') ||
+                str.includes('tác giả') || str.includes('nơi gửi') || str.includes('cơ quan') ||
+                str.includes('ký hiệu') || str.includes('trích yếu') || str.includes('nội dung') ||
+                str.includes('người nhận') || str.includes('đơn vị') ||
+                str.includes('loại văn bản') || str.includes('độ khẩn') || str.includes('xử lý chính')
+              ) {
+                matchingCellsCount++;
+              }
             });
-            break;
-          }
-        }
 
-        // CẢNH BÁO NẾU KHÔNG ĐÚNG CẤU TRÚC BẢNG SỔ VĂN BẢN ĐẾN
-        if (headerRowIndex === -1 || foundHeadersCount < 2) {
-          throw new Error('STRUCT_ERROR: File Excel không đúng cấu trúc bảng "Sổ lưu cấp số văn bản đến". Vui lòng chọn file Excel có cấu trúc các cột chuẩn (Số đến, Ngày đến, Trích yếu nội dung văn bản, Xử lý chính...).');
-        }
-
-        const startRow = headerRowIndex + 1;
-        const seenInFile = new Set<string>();
-        let duplicateCount = 0;
-
-        for (let r = startRow; r < rawRows.length; r++) {
-          const row = rawRows[r];
-          if (!row || row.length === 0) continue;
-
-          const trichYeu = formatExcelCellValue(row[colTrichYeu]);
-          const soDen = formatExcelCellValue(row[colSoDen]);
-          const ngayDen = formatExcelCellValue(row[colNgayDen]);
-          const tacGia = formatExcelCellValue(row[colTacGia]);
-          const soKyHieu = formatExcelCellValue(row[colSoKyHieu]);
-          const ngayVanBan = formatExcelCellValue(row[colNgayVanBan]);
-          const donViNhan = formatExcelCellValue(row[colDonViNhan]);
-          const loaiVanBan = formatExcelCellValue(row[colLoaiVanBan]);
-          const doKhan = formatExcelCellValue(row[colDoKhan]);
-          const linhVuc = formatExcelCellValue(row[colLinhVuc]);
-          const xuLyChinh = formatExcelCellValue(row[colXuLyChinh]);
-
-          // Bỏ qua dòng trống nếu không có cả trích yếu và số đến
-          if (!trichYeu && !soDen) continue;
-
-          let priority: 'THUONG' | 'KHAN' | 'KHAN_CAP' = 'THUONG';
-          const lowerDoKhan = doKhan.toLowerCase();
-          if (lowerDoKhan.includes('hỏa tốc') || lowerDoKhan.includes('hoa toc')) {
-            priority = 'KHAN_CAP';
-          } else if (lowerDoKhan.includes('khẩn') || lowerDoKhan.includes('khan')) {
-            priority = 'KHAN';
-          }
-
-          const itemPartial: Partial<IncomingDocTask> = {
-            ngay_den: ngayDen,
-            so_den: soDen,
-            tac_gia: tacGia,
-            so_ky_hieu: soKyHieu,
-            ngay_van_ban: ngayVanBan,
-            title: trichYeu,
-            don_vi_nhan: donViNhan,
-            loai_van_ban: loaiVanBan,
-            do_khan: doKhan,
-            priority,
-            linh_vuc: linhVuc,
-            xu_ly_chinh: xuLyChinh
-          };
-
-          const description = buildIncomingDocDescription(itemPartial);
-          const isValid = Boolean(trichYeu && trichYeu.trim().length > 0);
-
-          // KIỂM TRA TRÙNG LẶP (Bắt trùng trong file & trùng với DB)
-          let isDuplicate = false;
-          let duplicateReason = '';
-
-          const uniqueKeyTitle = trichYeu.trim().toLowerCase();
-          const uniqueKeySoDen = soDen ? `sden_${soDen.trim().toLowerCase()}` : '';
-
-          if (uniqueKeyTitle && seenInFile.has(uniqueKeyTitle)) {
-            isDuplicate = true;
-            duplicateReason = 'Trùng nội dung trích yếu với dòng khác trong cùng file Excel';
-          } else if (uniqueKeySoDen && seenInFile.has(uniqueKeySoDen)) {
-            isDuplicate = true;
-            duplicateReason = `Trùng Số đến ${soDen} với dòng khác trong cùng file Excel`;
-          } else if (Array.isArray(existingTasks) && existingTasks.length > 0) {
-            const dupTask = existingTasks.find((t: any) => {
-              if (uniqueKeySoDen && t.task_code && t.task_code.toLowerCase().includes(soDen.toLowerCase())) return true;
-              if (uniqueKeyTitle && t.title && t.title.trim().toLowerCase() === uniqueKeyTitle) return true;
-              if (soKyHieu && t.description && t.description.toLowerCase().includes(soKyHieu.toLowerCase())) return true;
-              return false;
-            });
-            if (dupTask) {
-              isDuplicate = true;
-              duplicateReason = `Trùng với nhiệm vụ đã có trong Kho Chung: "${dupTask.title}" (${dupTask.task_code})`;
+            // Nhận diện dòng Header khi có ít nhất 3 từ khóa trùng khớp
+            if (matchingCellsCount >= 3) {
+              headerRowIndex = r;
+              row.forEach((cellVal: any, cIdx: number) => {
+                const str = String(cellVal || '').toLowerCase().trim();
+                if (str.includes('ngày đến') || str.includes('ngay den')) colNgayDen = cIdx;
+                else if (str.includes('số đến') && !str.includes('sổ lưu')) colSoDen = cIdx;
+                else if (str.includes('tác giả') || str.includes('nơi gửi')) colTacGia = cIdx;
+                else if (str.includes('ký hiệu')) colSoKyHieu = cIdx;
+                else if (str.includes('ngày tháng') || str.includes('ngày văn bản')) colNgayVanBan = cIdx;
+                else if (str.includes('trích yếu') || str.includes('nội dung')) colTrichYeu = cIdx;
+                else if (str.includes('người nhận') || str.includes('đơn vị')) colDonViNhan = cIdx;
+                else if (str.includes('loại văn bản')) colLoaiVanBan = cIdx;
+                else if (str.includes('độ khẩn')) colDoKhan = cIdx;
+                else if (str.includes('lĩnh vực')) colLinhVuc = cIdx;
+                else if (str.includes('xử lý chính') || str.includes('chủ trì')) colXuLyChinh = cIdx;
+              });
+              break;
             }
           }
 
-          if (uniqueKeyTitle) seenInFile.add(uniqueKeyTitle);
-          if (uniqueKeySoDen) seenInFile.add(uniqueKeySoDen);
+          // Fallback gán chỉ số cột mặc định nếu không quét tự động được
+          if (headerRowIndex === -1) {
+            // Xác định dòng chứa dữ liệu đầu tiên để tìm dòng header ngay trên nó
+            for (let r = 0; r < Math.min(10, rawRows.length); r++) {
+              const rowStr = rawRows[r] ? rawRows[r].join(' ').toLowerCase() : '';
+              if (rowStr.includes('ngày đến') || rowStr.includes('số đến')) {
+                headerRowIndex = r;
+                break;
+              }
+            }
+            if (headerRowIndex === -1) headerRowIndex = 2; // Mặc định Row 3 (Index 2) cho file dạng này
+          }
 
-          if (isDuplicate) duplicateCount++;
+          const maxCols = rawRows[headerRowIndex] ? rawRows[headerRowIndex].length : 13;
+          const hasExtraColumn = maxCols >= 14 || (colDonViNhan !== -1 && colLoaiVanBan === -1);
 
-          result.push({
-            id: `import_row_${r}_${Date.now()}`,
-            ngay_den: ngayDen,
-            so_den: soDen,
-            tac_gia: tacGia,
-            so_ky_hieu: soKyHieu,
-            ngay_van_ban: ngayVanBan,
-            title: trichYeu || `(Chưa có trích yếu - Văn bản số ${soDen})`,
-            don_vi_nhan: donViNhan,
-            loai_van_ban: loaiVanBan,
-            do_khan: doKhan,
-            priority,
-            linh_vuc: linhVuc,
-            xu_ly_chinh: xuLyChinh,
-            due_date: '',
-            description,
-            selected: isValid && !isDuplicate, // Tự động bỏ chọn các dòng trùng lặp
-            isValid,
-            isDuplicate,
-            duplicateReason,
-            errorMessage: isValid ? (isDuplicate ? duplicateReason : undefined) : 'Thiếu nội dung trích yếu văn bản'
-          });
+          if (colNgayDen === -1) colNgayDen = 0;
+          if (colSoDen === -1) colSoDen = 1;
+          if (colTacGia === -1) colTacGia = 2;
+          if (colSoKyHieu === -1) colSoKyHieu = 3;
+          if (colNgayVanBan === -1) colNgayVanBan = 4;
+          if (colTrichYeu === -1) colTrichYeu = 5;
+          if (colDonViNhan === -1) colDonViNhan = 6;
+          if (colLoaiVanBan === -1) colLoaiVanBan = hasExtraColumn ? 10 : 9;
+          if (colDoKhan === -1) colDoKhan = hasExtraColumn ? 11 : 10;
+          if (colLinhVuc === -1) colLinhVuc = hasExtraColumn ? 12 : 11;
+          if (colXuLyChinh === -1) colXuLyChinh = hasExtraColumn ? 13 : 12;
+
+          const startRow = headerRowIndex + 1;
+          const sheetTasks: IncomingDocTask[] = [];
+          const seenInFile = new Set<string>();
+          let duplicateCount = 0;
+
+          for (let r = startRow; r < rawRows.length; r++) {
+            const row = rawRows[r];
+            if (!row || row.length === 0) continue;
+
+            let trichYeu = String(row[colTrichYeu] ?? '').trim();
+            const soDen = String(row[colSoDen] ?? '').trim();
+            const ngayDen = String(row[colNgayDen] ?? '').trim();
+            const tacGia = String(row[colTacGia] ?? '').trim();
+            const soKyHieu = String(row[colSoKyHieu] ?? '').trim();
+            const ngayVanBan = String(row[colNgayVanBan] ?? '').trim();
+            const donViNhan = String(row[colDonViNhan] ?? '').trim();
+            const loaiVanBan = String(row[colLoaiVanBan] ?? '').trim();
+            const doKhan = String(row[colDoKhan] ?? '').trim();
+            const linhVuc = String(row[colLinhVuc] ?? '').trim();
+            const xuLyChinh = String(row[colXuLyChinh] ?? '').trim();
+
+            // Loại bỏ các dòng tiêu đề phụ lặp lại
+            const rowCombined = (trichYeu + ' ' + soDen + ' ' + tacGia).toLowerCase();
+            if (rowCombined.includes('ngày đến') && rowCombined.includes('số đến')) continue;
+            if (rowCombined.includes('sổ lưu cấp số văn bản đến')) continue;
+            if (trichYeu.toLowerCase().includes('tên loại và trích yếu')) continue;
+
+            if (!trichYeu && !soDen && !soKyHieu && !tacGia) continue;
+
+            let priority: 'THUONG' | 'KHAN' | 'KHAN_CAP' = 'THUONG';
+            const lowerDoKhan = doKhan.toLowerCase();
+            if (lowerDoKhan.includes('hỏa tốc') || lowerDoKhan.includes('hoa toc')) {
+              priority = 'KHAN_CAP';
+            } else if (lowerDoKhan.includes('khẩn') || lowerDoKhan.includes('khan')) {
+              priority = 'KHAN';
+            }
+
+            const computedTitle = trichYeu || (soDen ? `Văn bản đến số ${soDen} (${soKyHieu || tacGia || 'Chưa trích yếu'})` : '');
+            if (!computedTitle || computedTitle.trim().length < 3) continue;
+
+            const itemPartial: Partial<IncomingDocTask> = {
+              ngay_den: ngayDen,
+              so_den: soDen,
+              tac_gia: tacGia,
+              so_ky_hieu: soKyHieu,
+              ngay_van_ban: ngayVanBan,
+              title: computedTitle,
+              don_vi_nhan: donViNhan,
+              loai_van_ban: loaiVanBan,
+              do_khan: doKhan,
+              priority,
+              linh_vuc: linhVuc,
+              xu_ly_chinh: xuLyChinh
+            };
+
+            const description = typeof buildIncomingDocDescription === 'function'
+              ? buildIncomingDocDescription(itemPartial)
+              : '';
+
+            const isValid = Boolean(computedTitle && computedTitle.trim().length > 0);
+
+            // Kiểm tra trùng lặp
+            let isDuplicate = false;
+            let duplicateReason = '';
+
+            const uniqueKeyTitle = computedTitle.trim().toLowerCase();
+            const uniqueKeySoDen = (soDen && soDen.toLowerCase() !== 'số đến') ? `sden_${soDen.trim().toLowerCase()}` : '';
+
+            if (uniqueKeyTitle && seenInFile.has(uniqueKeyTitle)) {
+              isDuplicate = true;
+              duplicateReason = 'Trùng nội dung trích yếu với dòng khác trong cùng file Excel';
+            } else if (uniqueKeySoDen && seenInFile.has(uniqueKeySoDen)) {
+              isDuplicate = true;
+              duplicateReason = `Trùng Số đến ${soDen} với dòng khác trong cùng file Excel`;
+            } else if (Array.isArray(existingTasks) && existingTasks.length > 0) {
+              const dupTask = existingTasks.find((t: any) => {
+                if (uniqueKeySoDen && t.task_code && t.task_code.toLowerCase() === soDen.toLowerCase()) return true;
+                if (uniqueKeyTitle && t.title && t.title.trim().toLowerCase() === uniqueKeyTitle) return true;
+                return false;
+              });
+              if (dupTask) {
+                isDuplicate = true;
+                duplicateReason = `Trùng với nhiệm vụ đã có trong Hệ thống: "${dupTask.title}"`;
+              }
+            }
+
+            if (uniqueKeyTitle) seenInFile.add(uniqueKeyTitle);
+            if (uniqueKeySoDen) seenInFile.add(uniqueKeySoDen);
+
+            if (isDuplicate) duplicateCount++;
+
+            sheetTasks.push({
+              id: `import_row_${r}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              ngay_den: ngayDen,
+              so_den: soDen,
+              tac_gia: tacGia,
+              so_ky_hieu: soKyHieu,
+              ngay_van_ban: ngayVanBan,
+              title: computedTitle,
+              don_vi_nhan: donViNhan,
+              loai_van_ban: loaiVanBan,
+              do_khan: doKhan,
+              priority,
+              linh_vuc: linhVuc,
+              xu_ly_chinh: xuLyChinh,
+              due_date: '',
+              description,
+              selected: isValid && !isDuplicate,
+              isValid,
+              isDuplicate,
+              duplicateReason,
+              errorMessage: isValid ? (isDuplicate ? duplicateReason : undefined) : 'Thiếu nội dung trích yếu văn bản'
+            });
+          }
+
+          if (sheetTasks.length > bestTaskCount) {
+            bestTaskCount = sheetTasks.length;
+            bestResult = { tasks: sheetTasks, duplicateCount };
+          }
         }
 
-        if (result.length === 0) {
-          throw new Error('STRUCT_ERROR: Không tìm thấy dữ liệu văn bản đến hợp lệ trong file Excel.');
+        if (!bestResult || bestResult.tasks.length === 0) {
+          throw new Error('STRUCT_ERROR: Không tìm thấy dữ liệu văn bản đến hợp lệ trong file Excel. Vui lòng kiểm tra file Excel có chứa bảng số đến/trích yếu văn bản.');
         }
 
-        resolve({ tasks: result, fileName: file.name, duplicateCount });
+        resolve({ tasks: bestResult.tasks, fileName: file.name, duplicateCount: bestResult.duplicateCount });
       } catch (err: any) {
         console.error("parseIncomingDocExcel error:", err);
         reject(err);
@@ -716,29 +791,24 @@ export function downloadIncomingDocExcelTemplate() {
 
   const ws = XLSX.utils.aoa_to_sheet(sheetData);
 
-  // Gộp ô tiêu đề dòng 1 A1:M1
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }];
 
   ws['!cols'] = [
-    { wch: 15 }, // Col A (0) : Ngày đến
-    { wch: 10 }, // Col B (1) : Số đến
-    { wch: 35 }, // Col C (2) : Tác giả
-    { wch: 25 }, // Col D (3) : Số, ký hiệu văn bản
-    { wch: 15 }, // Col E (4) : Ngày tháng năm văn bản
-    { wch: 60 }, // Col F (5) : Tên loại và trích yếu nội dung văn bản
-    { wch: 45 }, // Col G (6) : Đơn vị hoặc người nhận văn bản
-    { wch: 12 }, // Col H (7) : Ký nhận
-    { wch: 15 }, // Col I (8) : Ghi chú
-    { wch: 15 }, // Col J (9) : Loại văn bản
-    { wch: 12 }, // Col K (10): Độ khẩn
-    { wch: 15 }, // Col L (11): Lĩnh vực
-    { wch: 25 }  // Col M (12): Xử lý chính
+    { wch: 15 },
+    { wch: 10 },
+    { wch: 35 },
+    { wch: 25 },
+    { wch: 15 },
+    { wch: 60 },
+    { wch: 45 },
+    { wch: 12 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 12 },
+    { wch: 15 },
+    { wch: 25 }
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, "VB đến");
   XLSX.writeFile(wb, "Mau_So_Van_Ban_Den_2026.xlsx");
 }
-
-
-
-

@@ -61,6 +61,7 @@ async function startServer() {
   app.post('/api/admin/departments', reportController.createDepartment);
   app.get('/api/admin/roles', reportController.getRoles);
   app.post('/api/admin/roles', reportController.createRole);
+  app.delete('/api/admin/tasks/clear-all', reportController.clearAllTasks);
 
   // API Endpoints - Standalone Task Pool (Kho Nhiệm Vụ Chung Phân Cấp)
   app.get('/api/standalone-tasks', standaloneTaskController.getTasks);
@@ -89,6 +90,11 @@ async function startServer() {
   app.post('/api/reports/save', reportController.saveReport);
   app.post('/api/reports/carry-over', reportController.carryOverNextWeek);
 
+  // API Endpoints - Consolidated Office Reports (Nghị định 30)
+  app.get('/api/reports/consolidated/detail', reportController.getConsolidatedReportDetail);
+  app.post('/api/reports/consolidated/save', reportController.saveConsolidatedReport);
+  app.post('/api/generate-word-consolidated', reportController.generateConsolidatedWord);
+
   // API Endpoints - Report Sharing & Permissions
   app.post('/api/reports/share', reportController.shareReport);
   app.get('/api/reports/shares', reportController.getReportShares);
@@ -97,6 +103,14 @@ async function startServer() {
   // API Endpoints - Notifications System
   app.get('/api/notifications', reportController.getNotifications);
   app.post('/api/notifications/mark-read', reportController.markNotificationRead);
+
+  // API Endpoints - Digital Signature & Approval Workflow
+  app.post('/api/user/signature-pin', reportController.updateSignatureAndPin);
+  app.post('/api/reports/submit-approval', reportController.submitReportForApproval);
+  app.get('/api/reports/pending-approval', reportController.getPendingReports);
+  app.post('/api/reports/sign', reportController.signReportWithPin);
+  app.get('/api/reports/signatures', reportController.getReportSignatures);
+  app.post('/api/reports/finalize', reportController.finalizeReport);
 
   // Sync & Export Endpoints
   app.get('/api/sync', reportController.syncData);

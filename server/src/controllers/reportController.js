@@ -1,5 +1,5 @@
 import { db } from '../db.js';
-import { createDocxReport } from '../services/docxService.js';
+import { createDocxReport, createConsolidatedOfficeDocx } from '../services/docxService.js';
 
 /**
  * 1. Đăng nhập tài khoản
@@ -389,13 +389,10 @@ export async function createDepartment(req, res) {
 export async function getReportHistory(req, res) {
   try {
     const { department_id, account_id } = req.query;
-    const currentUserId = account_id;
+    const targetDeptId = department_id || 'dept_vp';
+    const currentUserId = account_id || '';
 
-    if (!currentUserId) {
-      return res.json({ success: true, reports: [] });
-    }
-
-    const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId);
+    const currentUser = currentUserId ? db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId) : null;
     const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
     let reports = [];
@@ -406,22 +403,23 @@ export async function getReportHistory(req, res) {
         FROM reports r
         JOIN accounts a ON r.account_id = a.id
         JOIN departments d ON r.department_id = d.id
-        ORDER BY r.year DESC, r.week_number DESC
+        ORDER BY r.updated_at DESC, r.year DESC, r.week_number DESC
       `).all();
     } else {
       reports = db.prepare(`
         SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi, d.code as don_vi_code,
           CASE 
             WHEN r.account_id = ? THEN 'OWNER'
-            ELSE rs.permission
+            WHEN r.report_type = 'CONSOLIDATED_OFFICE' THEN 'EDIT'
+            ELSE COALESCE(rs.permission, 'VIEW')
           END as user_permission
         FROM reports r
         JOIN accounts a ON r.account_id = a.id
         JOIN departments d ON r.department_id = d.id
         LEFT JOIN report_shares rs ON r.id = rs.report_id AND rs.shared_with_account_id = ?
-        WHERE r.account_id = ? OR rs.shared_with_account_id = ?
-        ORDER BY r.year DESC, r.week_number DESC
-      `).all(currentUserId, currentUserId, currentUserId, currentUserId);
+        WHERE r.department_id = ? OR r.account_id = ? OR rs.shared_with_account_id = ?
+        ORDER BY r.updated_at DESC, r.year DESC, r.week_number DESC
+      `).all(currentUserId, currentUserId, targetDeptId, currentUserId, currentUserId);
     }
 
     // Tính toán số lượng task và tỷ lệ hoàn thành cho mỗi báo cáo
@@ -447,6 +445,8 @@ export async function getReportHistory(req, res) {
     return res.status(500).json({ success: false, error: error.message });
   }
 }
+
+
 
 /**
  * 4. Lấy Chi tiết 1 Báo cáo Tuần (Có kiểm tra quyền truy cập)
@@ -545,6 +545,8 @@ export async function getReportDetail(req, res) {
       file_original_name: t.file_original_name || '',
       nhom: t.category,
       parent_task_id: t.parent_task_id,
+      is_starred: Boolean(t.is_starred),
+      is_recurring: Boolean(t.is_recurring),
       isEdited: false
     }));
 
@@ -555,6 +557,8 @@ export async function getReportDetail(req, res) {
       san_pham_du_kien: t.san_pham,
       nhom: t.category,
       parent_task_id: t.parent_task_id,
+      is_starred: Boolean(t.is_starred),
+      is_recurring: Boolean(t.is_recurring),
       isEdited: false
     }));
 
@@ -611,9 +615,10 @@ export async function saveReport(req, res) {
     const editorName = editorAccount ? editorAccount.full_name : currentUserId;
 
     // Kiểm tra xem báo cáo đã tồn tại chưa
-    const existingReport = db.prepare('SELECT * FROM reports WHERE id = ?').get(targetReportId);
+    const existingReport = db.prepare("SELECT * FROM reports WHERE id = ? OR (account_id = ? AND COALESCE(report_type, 'SINGLE') = 'SINGLE' AND week_number = ? AND year = ?)").get(targetReportId, currentUserId, week, year);
 
     if (existingReport) {
+      targetReportId = existingReport.id;
       // Kiểm tra quyền sửa
       let canEdit = false;
 
@@ -662,8 +667,13 @@ export async function saveReport(req, res) {
       } else {
         // Create new report owned by currentUserId
         db.prepare(`
-          INSERT INTO reports (id, department_id, account_id, week_number, year, status, kho_khan, created_at, updated_at, last_edited_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, ?)
+          INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, kho_khan, created_at, updated_at, last_edited_by)
+          VALUES (?, ?, ?, ?, ?, ?, 'SINGLE', ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, ?)
+          ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
+            kho_khan = excluded.kho_khan,
+            status = excluded.status,
+            updated_at = CURRENT_TIMESTAMP,
+            last_edited_by = excluded.last_edited_by
         `).run(targetReportId, deptId, currentUserId, week, year, metadata.status || 'DRAFT', metadata.kho_khan || 'Không', metadata.ngay_lap || null, editorName);
       }
 
@@ -671,8 +681,8 @@ export async function saveReport(req, res) {
       db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
 
       const stmtTask = db.prepare(`
-        INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index, file_minh_chung, file_original_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index, file_minh_chung, file_original_name, is_starred, is_recurring)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       (table1 || []).forEach((t, idx) => {
@@ -696,7 +706,9 @@ export async function saveReport(req, res) {
           t.parent_task_id || null,
           idx + 1,
           t.file_minh_chung || '',
-          t.file_original_name || ''
+          t.file_original_name || '',
+          t.is_starred ? 1 : 0,
+          t.is_recurring ? 1 : 0
         );
       });
 
@@ -721,7 +733,9 @@ export async function saveReport(req, res) {
           t.parent_task_id || null,
           idx + 1,
           '',
-          ''
+          '',
+          t.is_starred ? 1 : 0,
+          t.is_recurring ? 1 : 0
         );
       });
 
@@ -876,9 +890,10 @@ export async function carryOverNextWeek(req, res) {
  */
 export async function shareReport(req, res) {
   try {
-    const { report_id, shared_with_account_id, permission, sender_account_id } = req.body;
+    const { report_id, shared_with_account_id, permission, sender_account_id, shared_by_account_id } = req.body;
+    const senderId = sender_account_id || shared_by_account_id || 'system';
 
-    if (!report_id || !shared_with_account_id || !permission || !sender_account_id) {
+    if (!report_id || !shared_with_account_id || !permission) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin chia sẻ báo cáo' });
     }
 
@@ -887,7 +902,7 @@ export async function shareReport(req, res) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy báo cáo' });
     }
 
-    const sender = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(sender_account_id);
+    const sender = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(senderId);
     const recipient = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(shared_with_account_id);
 
     if (!recipient) {
@@ -897,17 +912,17 @@ export async function shareReport(req, res) {
     // Upsert share record
     const shareId = `share_${report_id}_${shared_with_account_id}`;
     db.prepare(`
-      INSERT INTO report_shares (id, report_id, owner_account_id, shared_with_account_id, permission)
+      INSERT INTO report_shares (id, report_id, shared_with_account_id, permission, shared_by_account_id)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(report_id, shared_with_account_id) DO UPDATE SET
         permission = excluded.permission,
         created_at = CURRENT_TIMESTAMP
-    `).run(shareId, report_id, report.account_id, shared_with_account_id, permission);
+    `).run(shareId, report_id, shared_with_account_id, permission, senderId);
 
     // Create Notification for recipient
     const notifId = `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-    const permText = permission === 'EDIT' ? 'Chỉnh sửa (Full Access)' : 'Chỉ xem (Read Only)';
-    const senderName = sender ? sender.full_name : 'Người dùng';
+    const permText = permission === 'EDIT' ? 'Chỉnh sửa' : 'Chỉ xem';
+    const senderName = sender ? sender.full_name : 'Một thành viên';
 
     db.prepare(`
       INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message, report_id)
@@ -915,7 +930,7 @@ export async function shareReport(req, res) {
     `).run(
       notifId,
       shared_with_account_id,
-      sender_account_id,
+      senderId,
       'Báo cáo tuần được chia sẻ',
       `${senderName} đã chia sẻ với bạn Báo cáo Tuần ${report.week_number}/${report.year} (Quyền: ${permText}).`,
       report_id
@@ -946,8 +961,9 @@ export async function getReportShares(req, res) {
              a.id as shared_with_id, a.username, a.full_name, d.name as department_name
       FROM report_shares rs
       JOIN accounts a ON rs.shared_with_account_id = a.id
-      JOIN departments d ON a.department_id = d.id
+      LEFT JOIN departments d ON a.department_id = d.id
       WHERE rs.report_id = ?
+      ORDER BY rs.created_at DESC
     `).all(report_id);
 
     return res.json({ success: true, shares });
@@ -1173,6 +1189,631 @@ export async function getCandidateTasks(req, res) {
     return res.json({ success: true, tasks: [...mappedStandalone, ...reportTasks] });
   } catch (error) {
     console.error('Lỗi getCandidateTasks:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Lấy chi tiết Báo cáo tuần tổng hợp Văn phòng (Đa tổ: CĐS & Văn thư - Lưu trữ)
+ */
+export async function getConsolidatedReportDetail(req, res) {
+  try {
+    const { week, year, department_id, account_id } = req.query;
+    const targetWeek = parseInt(week || '38', 10);
+    const targetYear = parseInt(year || '2026', 10);
+    const masterReportId = `rpt_consolidated_office_w${targetWeek}_${targetYear}`;
+
+    // 1. Kiểm tra hoặc tạo Master Report
+    const targetAccId = account_id || 'acc_vp_hoa';
+    let masterReport = db.prepare("SELECT * FROM reports WHERE id = ? OR (account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?)").get(masterReportId, targetAccId, targetWeek, targetYear);
+
+    if (!masterReport) {
+      db.prepare(`
+        INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan)
+        VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', 'Không')
+        ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
+          updated_at = CURRENT_TIMESTAMP
+      `).run(masterReportId, department_id || 'dept_vp', targetAccId, targetWeek, targetYear);
+      masterReport = db.prepare("SELECT * FROM reports WHERE id = ? OR (account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?)").get(masterReportId, targetAccId, targetWeek, targetYear);
+    }
+
+    // 2. Lấy Mục III (doc_inspection_stats)
+    let docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(masterReportId);
+    if (!docStats || docStats.length === 0) {
+      const defaultDepts = [
+        { name: 'Văn phòng', total: 1, err: 0 },
+        { name: 'Phòng Kế hoạch Tài chính', total: 12, err: 0 },
+        { name: 'Phòng Quản lý Dự án', total: 11, err: 4 },
+        { name: 'Phòng Giám sát Khu liên hợp', total: 5, err: 1 },
+        { name: 'Phòng Giám sát Khối lượng', total: 0, err: 0 },
+        { name: 'Phòng Kiểm tra Môi trường', total: 11, err: 2 }
+      ];
+      const stmt = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, order_index) VALUES (?, ?, ?, ?, ?, ?)');
+      defaultDepts.forEach((d, i) => {
+        stmt.run(`ds_${masterReportId}_${i}`, masterReportId, d.name, d.total, d.err, i + 1);
+      });
+      docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(masterReportId);
+    }
+
+    // 3. Lấy Mục IV & 4 Chữ ký (consolidated_report_meta)
+    let userAcc;
+    if (account_id) {
+      userAcc = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
+    }
+    const defaultNguoiLap = userAcc ? userAcc.full_name : '';
+
+    let meta = db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(masterReportId);
+    if (!meta) {
+      db.prepare(`
+        INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note)
+        VALUES (?, ?, 'Trần Thuận Hòa', ?, 'Nguyễn Đức Thắng', 'Hoàng Văn Dương', ?)
+      `).run(
+        `meta_${masterReportId}`,
+        masterReportId,
+        defaultNguoiLap,
+        'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần ' + targetWeek + ' và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần ' + (targetWeek + 1) + ' của Bộ phận Văn thư – Lưu trữ và Chuyển đổi số. Kính trình Lãnh đạo phòng xem xét./.'
+      );
+      meta = db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(masterReportId);
+    } else if (!meta.nguoi_lap_name || meta.nguoi_lap_name.includes('Nguyễn Thị Mai')) {
+      if (defaultNguoiLap) {
+        meta.nguoi_lap_name = defaultNguoiLap;
+        db.prepare('UPDATE consolidated_report_meta SET nguoi_lap_name = ? WHERE id = ?').run(defaultNguoiLap, meta.id);
+      }
+    }
+
+    // 4. Lấy toàn bộ Tasks (gồm cả task của master và sub-teams)
+    const tasks = db.prepare(`
+      SELECT t.*, COALESCE(t.team_code, 'VAN_THU') as team_code
+      FROM tasks t
+      WHERE t.report_id = ? OR t.report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)
+      ORDER BY t.table_type ASC, t.order_index ASC
+    `).all(masterReportId, masterReportId);
+
+    const table1 = tasks.filter(t => t.table_type === 1).map(t => ({
+      id: t.id,
+      noi_dung: t.noi_dung,
+      thoi_gian: t.thoi_gian,
+      trien_khai: t.trien_khai,
+      tien_do: t.tien_do,
+      san_pham: t.san_pham || '',
+      nhom: t.category,
+      team_code: t.team_code || 'VAN_THU',
+      file_minh_chung: t.file_minh_chung || '',
+      is_starred: Boolean(t.is_starred),
+      is_recurring: Boolean(t.is_recurring)
+    }));
+
+    const table2 = tasks.filter(t => t.table_type === 2).map(t => ({
+      id: t.id,
+      noi_dung: t.noi_dung,
+      thoi_gian_du_kien: t.thoi_gian,
+      san_pham_du_kien: t.san_pham,
+      thoi_gian: t.thoi_gian,
+      san_pham: t.san_pham,
+      nhom: t.category,
+      team_code: t.team_code || 'VAN_THU',
+      is_starred: Boolean(t.is_starred),
+      is_recurring: Boolean(t.is_recurring)
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        metadata: {
+          report_id: masterReport.id,
+          tuan: masterReport.week_number,
+          tuan_tiep: masterReport.week_number + 1,
+          nam: masterReport.year,
+          report_type: 'CONSOLIDATED_OFFICE',
+          kho_khan: masterReport.kho_khan,
+          ngay_lap: masterReport.created_at
+        },
+        table1,
+        table2,
+        doc_inspection_stats: docStats,
+        consolidated_meta: meta
+      }
+    });
+  } catch (error) {
+    console.error('Lỗi getConsolidatedReportDetail:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Lưu / Cập nhật Báo cáo tuần tổng hợp Văn phòng
+ */
+export async function saveConsolidatedReport(req, res) {
+  try {
+    const { metadata, table1, table2, doc_inspection_stats, consolidated_meta } = req.body;
+    if (!metadata || !metadata.tuan) {
+      return res.status(400).json({ success: false, error: 'Dữ liệu không hợp lệ' });
+    }
+
+    const week = parseInt(metadata.tuan, 10);
+    const year = parseInt(metadata.nam || '2026', 10);
+    const masterReportId = metadata.report_id || `rpt_consolidated_office_w${week}_${year}`;
+
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      // 1. Upsert master report
+      const deptId = metadata.department_id || 'dept_vp';
+      const accId = metadata.account_id || 'acc_vp_hoa';
+      const existing = db.prepare("SELECT id FROM reports WHERE id = ? OR (account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?)").get(masterReportId, accId, week, year);
+      const targetReportId = existing ? existing.id : masterReportId;
+
+      if (existing) {
+        db.prepare('UPDATE reports SET kho_khan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .run(metadata.kho_khan || 'Không', targetReportId);
+      } else {
+        db.prepare(`
+          INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan)
+          VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', ?)
+          ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
+            kho_khan = excluded.kho_khan,
+            updated_at = CURRENT_TIMESTAMP
+        `).run(targetReportId, deptId, accId, week, year, metadata.kho_khan || 'Không');
+      }
+
+      // 2. Upsert consolidated meta
+      if (consolidated_meta) {
+        db.prepare('DELETE FROM consolidated_report_meta WHERE report_id = ?').run(masterReportId);
+        db.prepare(`
+          INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          `meta_${masterReportId}`,
+          masterReportId,
+          consolidated_meta.to_truong_name || 'Trần Thuận Hòa',
+          consolidated_meta.nguoi_lap_name || metadata?.nguoi_lap || '',
+          consolidated_meta.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng',
+          consolidated_meta.chanh_van_phong_name || 'Hoàng Văn Dương',
+          consolidated_meta.ending_note || ''
+        );
+      }
+
+      // 3. Upsert doc_inspection_stats
+      if (Array.isArray(doc_inspection_stats)) {
+        db.prepare('DELETE FROM doc_inspection_stats WHERE report_id = ?').run(masterReportId);
+        const stmtDs = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, order_index) VALUES (?, ?, ?, ?, ?, ?)');
+        doc_inspection_stats.forEach((ds, idx) => {
+          stmtDs.run(
+            `ds_${masterReportId}_${idx}_${Date.now()}`,
+            masterReportId,
+            ds.department_name || '',
+            parseInt(ds.total_checked || '0', 10),
+            parseInt(ds.error_count || '0', 10),
+            idx + 1
+          );
+        });
+      }
+
+      // 4. Upsert tasks (Clear existing tasks for this consolidated report and any linked sub-reports)
+      db.prepare('DELETE FROM tasks WHERE report_id = ? OR report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)').run(masterReportId, masterReportId);
+      const stmtTask = db.prepare(`
+        INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, order_index, team_code, file_minh_chung, is_starred, is_recurring)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      (table1 || []).forEach((t, idx) => {
+        const taskId = (t.id && !t.id.startsWith('t1_init')) ? t.id : `t1_${masterReportId}_${idx}`;
+        stmtTask.run(
+          taskId,
+          masterReportId,
+          1,
+          t.nhom || 'Thường xuyên',
+          t.noi_dung || '',
+          t.thoi_gian || 'Thường xuyên',
+          t.trien_khai || '',
+          t.tien_do || 'Hoàn thành – đúng hạn',
+          t.san_pham || '',
+          idx + 1,
+          t.team_code || 'VAN_THU',
+          t.file_minh_chung || '',
+          t.is_starred ? 1 : 0,
+          t.is_recurring ? 1 : 0
+        );
+      });
+
+      (table2 || []).forEach((t, idx) => {
+        const taskId = (t.id && !t.id.startsWith('t2_init')) ? t.id : `t2_${masterReportId}_${idx}`;
+        stmtTask.run(
+          taskId,
+          masterReportId,
+          2,
+          t.nhom || 'Thường xuyên',
+          t.noi_dung || '',
+          t.thoi_gian_du_kien || t.thoi_gian || 'Thường xuyên',
+          '',
+          '',
+          t.san_pham_du_kien || t.san_pham || '',
+          idx + 1,
+          t.team_code || 'VAN_THU',
+          '',
+          t.is_starred ? 1 : 0,
+          t.is_recurring ? 1 : 0
+        );
+      });
+
+      db.exec('COMMIT;');
+      return res.json({ success: true, message: 'Đã lưu Báo cáo tuần tổng hợp Văn phòng thành công!' });
+    } catch (txErr) {
+      db.exec('ROLLBACK;');
+      throw txErr;
+    }
+  } catch (error) {
+    console.error('Lỗi saveConsolidatedReport:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Xuất file Word Báo cáo tuần tổng hợp Văn phòng (Nghị định 30)
+ */
+export async function generateConsolidatedWord(req, res) {
+  try {
+    const payload = req.body;
+    const docBuffer = createConsolidatedOfficeDocx(payload);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename=BAO_CAO_TONG_HOP_TUAN_${payload.metadata?.tuan || 38}.docx`);
+    return res.send(docBuffer);
+  } catch (error) {
+    console.error('Lỗi generateConsolidatedWord:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Xóa sạch toàn bộ nhiệm vụ (Báo cáo tuần & Kho nhiệm vụ chung) trong CSDL
+ */
+export async function clearAllTasks(req, res) {
+  try {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    db.prepare('DELETE FROM task_extensions').run();
+    db.prepare('DELETE FROM task_assignment_history').run();
+    db.prepare('DELETE FROM standalone_tasks').run();
+    db.prepare('DELETE FROM tasks').run();
+    db.exec('PRAGMA foreign_keys = ON;');
+
+    return res.json({
+      success: true,
+      message: 'Đã xóa toàn bộ nhiệm vụ trong cơ sở dữ liệu thành công!'
+    });
+  } catch (error) {
+    console.error('Lỗi clearAllTasks:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Cập nhật Chữ ký cá nhân & Mã PIN 6 số
+ */
+export async function updateSignatureAndPin(req, res) {
+  try {
+    const { account_id, pin_code, signature_url } = req.body;
+    if (!account_id) {
+      return res.status(400).json({ success: false, error: 'Thiếu account_id' });
+    }
+    if (pin_code && !/^\d{6}$/.test(pin_code)) {
+      return res.status(400).json({ success: false, error: 'Mã PIN phải gồm đúng 6 chữ số (0-9)!' });
+    }
+
+    const currentAcc = db.prepare('SELECT id, signature_url, pin_code_hash FROM accounts WHERE id = ?').get(account_id);
+    if (!currentAcc) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản' });
+    }
+
+    const newSigUrl = signature_url || currentAcc.signature_url || '';
+    const newPinHash = pin_code || currentAcc.pin_code_hash || '';
+
+    db.prepare(`
+      UPDATE accounts
+      SET signature_url = ?, pin_code_hash = ?, signature_updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(newSigUrl, newPinHash, account_id);
+
+    return res.json({
+      success: true,
+      message: 'Cập nhật Chữ ký cá nhân & Mã PIN 6 số thành công!',
+      signature_url: newSigUrl,
+      has_pin: !!newPinHash
+    });
+  } catch (error) {
+    console.error('Lỗi updateSignatureAndPin:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Trình nộp Báo cáo tuần cho chuỗi người duyệt & gán theo vị trí
+ */
+export async function submitReportForApproval(req, res) {
+  try {
+    const { report_id, account_id, approver_ids, approver_slots } = req.body;
+    if (!report_id) {
+      return res.status(400).json({ success: false, error: 'Thiếu report_id' });
+    }
+
+    const approversArr = Array.isArray(approver_ids) ? approver_ids : [];
+    const firstApprover = approversArr.length > 0 ? approversArr[0] : '';
+    const approversJson = JSON.stringify(approversArr);
+
+    // 1. Cập nhật bảng reports
+    db.prepare(`
+      UPDATE reports
+      SET approval_status = 'PENDING_APPROVAL',
+          approvers_chain = ?,
+          current_approver_id = ?
+      WHERE id = ?
+    `).run(approversJson, firstApprover, report_id);
+
+    // 2. Nếu có gán theo vị trí (Tổ trưởng, Phó chánh VP, Chánh VP), cập nhật vào consolidated_report_meta
+    if (approver_slots) {
+      const { to_truong_id, pho_chanh_van_phong_id, chanh_van_phong_id } = approver_slots;
+
+      const toTruongAcc = to_truong_id ? db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(to_truong_id) : null;
+      const phoChanhAcc = pho_chanh_van_phong_id ? db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(pho_chanh_van_phong_id) : null;
+      const chanhAcc = chanh_van_phong_id ? db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(chanh_van_phong_id) : null;
+
+      const meta = db.prepare('SELECT id FROM consolidated_report_meta WHERE report_id = ?').get(report_id);
+      if (meta) {
+        db.prepare(`
+          UPDATE consolidated_report_meta
+          SET to_truong_name = COALESCE(?, to_truong_name),
+              pho_chanh_van_phong_name = COALESCE(?, pho_chanh_van_phong_name),
+              chanh_van_phong_name = COALESCE(?, chanh_van_phong_name)
+          WHERE report_id = ?
+        `).run(
+          toTruongAcc ? toTruongAcc.full_name : null,
+          phoChanhAcc ? phoChanhAcc.full_name : null,
+          chanhAcc ? chanhAcc.full_name : null,
+          report_id
+        );
+      }
+    }
+
+    // 3. Gửi thông báo cho TẤT CẢ những người duyệt được gán
+    const senderAcc = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
+    const senderName = senderAcc ? senderAcc.full_name : 'Nhân viên';
+
+    const uniqueApproverIds = Array.from(new Set(approversArr));
+    uniqueApproverIds.forEach((targetAccId) => {
+      if (!targetAccId) return;
+      db.prepare(`
+        INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message, report_id)
+        VALUES (?, ?, ?, 'REPORT_SUBMITTED', 'Báo cáo tuần chờ bạn duyệt', ?, ?)
+      `).run(
+        'notif_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        targetAccId,
+        account_id || 'system',
+        `${senderName} đã gửi trình duyệt Báo cáo tuần. Vui lòng kiểm tra và thực hiện Ký số xác thực.`,
+        report_id
+      );
+    });
+
+    return res.json({
+      success: true,
+      message: 'Đã gửi trình nộp báo cáo tuần và thông báo cho người duyệt thành công!'
+    });
+  } catch (error) {
+    console.error('Lỗi submitReportForApproval:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Lấy danh sách các báo cáo tuần đang chờ tài khoản hiện tại phê duyệt
+ */
+export async function getPendingReports(req, res) {
+  try {
+    const { account_id } = req.query;
+    if (!account_id) {
+      return res.status(400).json({ success: false, error: 'Thiếu account_id' });
+    }
+
+    const reports = db.prepare(`
+      SELECT r.*, a.full_name as author_name, d.name as department_name
+      FROM reports r
+      LEFT JOIN accounts a ON r.account_id = a.id
+      LEFT JOIN departments d ON r.department_id = d.id
+      WHERE r.approval_status IN ('PENDING_APPROVAL', 'PARTIALLY_SIGNED')
+        AND (r.approvers_chain LIKE ? OR r.current_approver_id = ?)
+      ORDER BY r.updated_at DESC
+    `).all(`%"${account_id}"%`, account_id);
+
+    return res.json({ success: true, reports });
+  } catch (error) {
+    console.error('Lỗi getPendingReports:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Ký số Báo cáo bằng Mã PIN 6 số
+ */
+export async function signReportWithPin(req, res) {
+  try {
+    const { report_id, account_id, pin_code, note } = req.body;
+    if (!report_id || !account_id || !pin_code) {
+      return res.status(400).json({ success: false, error: 'Vui lòng nhập đầy đủ report_id, account_id và Mã PIN 6 số!' });
+    }
+
+    // 1. Kiểm tra tài khoản
+    const account = db.prepare(`
+      SELECT a.id, a.full_name, a.position_level, a.signature_url, a.pin_code_hash, d.name as department_name
+      FROM accounts a
+      LEFT JOIN departments d ON a.department_id = d.id
+      WHERE a.id = ?
+    `).get(account_id);
+
+    if (!account) {
+      return res.status(404).json({ success: false, error: 'Tài khoản người ký không tồn tại' });
+    }
+
+    if (!account.pin_code_hash) {
+      return res.status(400).json({ success: false, error: 'Bạn chưa thiết lập Mã PIN 6 số. Vui lòng vào Cài đặt tài khoản để thiết lập PIN!' });
+    }
+
+    if (account.pin_code_hash !== pin_code) {
+      return res.status(401).json({ success: false, error: 'Mã PIN 6 số không chính xác. Vui lòng thử lại!' });
+    }
+
+    if (!account.signature_url) {
+      return res.status(400).json({ success: false, error: 'Bạn chưa tải lên ảnh chữ ký tay tách nền. Vui lòng cập nhật hình ảnh chữ ký!' });
+    }
+
+    // 2. Lấy thông tin báo cáo
+    const report = db.prepare('SELECT id, approvers_chain, approval_status FROM reports WHERE id = ?').get(report_id);
+    if (!report) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy Báo cáo tuần' });
+    }
+
+    let approversChain = [];
+    try {
+      approversChain = JSON.parse(report.approvers_chain || '[]');
+    } catch (e) {}
+
+    const stepOrder = approversChain.indexOf(account_id) + 1 || 1;
+    const posLabel = account.position_level === 'GIAM_DOC' ? 'Giám đốc'
+      : account.position_level === 'PHO_GIAM_DOC' ? 'Phó Giám đốc'
+      : account.position_level === 'TRUONG_PHONG' ? 'Trưởng phòng'
+      : account.position_level === 'PHO_PHONG' ? 'Phó phòng'
+      : account.position_level === 'TO_TRUONG' ? 'Tổ trưởng' : 'Chuyên viên';
+
+    // 3. Ghi vết Ký số vào report_signatures
+    const sigId = `sig_${report_id}_${account_id}`;
+    db.prepare(`
+      INSERT OR REPLACE INTO report_signatures (
+        id, report_id, signer_account_id, signer_name, signer_position, signer_department, signature_url, step_order, signed_at, note
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+    `).run(
+      sigId,
+      report_id,
+      account_id,
+      account.full_name,
+      posLabel,
+      account.department_name || 'Ban Quản lý',
+      account.signature_url,
+      stepOrder,
+      note || 'Đã ký số phê duyệt'
+    );
+
+    // 4. Kiểm tra tiến độ chuỗi người duyệt
+    const signedRows = db.prepare('SELECT signer_account_id FROM report_signatures WHERE report_id = ?').all(report_id);
+    const signedAccountIds = new Set(signedRows.map(r => r.signer_account_id));
+
+    let newStatus = 'PARTIALLY_SIGNED';
+    let nextApprover = '';
+
+    if (approversChain.length > 0) {
+      const remaining = approversChain.filter(id => !signedAccountIds.has(id));
+      if (remaining.length === 0) {
+        newStatus = 'APPROVED';
+        nextApprover = '';
+      } else {
+        newStatus = 'PARTIALLY_SIGNED';
+        nextApprover = remaining[0];
+      }
+    } else {
+      newStatus = 'APPROVED';
+    }
+
+    db.prepare(`
+      UPDATE reports
+      SET approval_status = ?, current_approver_id = ?
+      WHERE id = ?
+    `).run(newStatus, nextApprover, report_id);
+
+    return res.json({
+      success: true,
+      message: '🎉 Ký số và Phê duyệt Báo cáo tuần thành công!',
+      approval_status: newStatus,
+      signature: {
+        id: sigId,
+        signer_name: account.full_name,
+        signer_position: posLabel,
+        signature_url: account.signature_url,
+        signed_at: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Lỗi signReportWithPin:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Lấy danh sách chữ ký số của một báo cáo
+ */
+export async function getReportSignatures(req, res) {
+  try {
+    const { report_id } = req.query;
+    if (!report_id) {
+      return res.status(400).json({ success: false, error: 'Thiếu report_id' });
+    }
+
+    const signatures = db.prepare(`
+      SELECT s.*, a.full_name, a.position_level
+      FROM report_signatures s
+      LEFT JOIN accounts a ON s.signer_account_id = a.id
+      WHERE s.report_id = ?
+      ORDER BY s.step_order ASC, s.signed_at ASC
+    `).all(report_id);
+
+    return res.json({ success: true, signatures });
+  } catch (error) {
+    console.error('Lỗi getReportSignatures:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Chốt báo cáo tuần sau khi thu thập đủ chữ ký số
+ */
+export async function finalizeReport(req, res) {
+  try {
+    const { report_id, account_id } = req.body;
+    if (!report_id) {
+      return res.status(400).json({ success: false, error: 'Thiếu report_id' });
+    }
+
+    db.prepare(`
+      UPDATE reports
+      SET approval_status = 'APPROVED', status = 'APPROVED', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(report_id);
+
+    // Gửi thông báo đến người tạo & người duyệt
+    const report = db.prepare('SELECT account_id, approvers_chain FROM reports WHERE id = ?').get(report_id);
+    if (report) {
+      const allRecipients = new Set([report.account_id]);
+      try {
+        const chain = JSON.parse(report.approvers_chain || '[]');
+        chain.forEach((id) => allRecipients.add(id));
+      } catch (e) {}
+
+      allRecipients.forEach(targetId => {
+        if (!targetId) return;
+        db.prepare(`
+          INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message, report_id)
+          VALUES (?, ?, ?, 'REPORT_FINALIZED', '🎉 Báo cáo tuần đã CHỐT CHÍNH THỨC', ?, ?)
+        `).run(
+          'notif_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+          targetId,
+          account_id || 'system',
+          'Báo cáo tuần đã thu thập đầy đủ chữ ký số xác thực và được Chốt chính thức. Bạn có thể xem trước, in PDF và tải file Word hoàn chỉnh.',
+          report_id
+        );
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: '🎉 Đã CHỐT Báo cáo tuần thành công! Đơn hiện tại đã khóa chính thức và có thể xuất PDF / Word.'
+    });
+  } catch (error) {
+    console.error('Lỗi finalizeReport:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }

@@ -9,9 +9,12 @@ export interface TaskTable1 {
   file_original_name?: string;
   nhom: 'Thường xuyên' | 'Đột xuất';
   isEdited?: boolean;
+  is_starred?: boolean;
+  is_recurring?: boolean;
   is_directive_task?: boolean;
   assigner_name?: string;
   task_code?: string;
+  team_code?: 'VAN_THU' | 'CDS';
   originalData?: any;
 }
 
@@ -22,6 +25,9 @@ export interface TaskTable2 {
   san_pham_du_kien: string;
   nhom: 'Thường xuyên' | 'Đột xuất';
   isEdited?: boolean;
+  is_starred?: boolean;
+  is_recurring?: boolean;
+  team_code?: 'VAN_THU' | 'CDS';
   originalData?: any;
 }
 
@@ -61,13 +67,14 @@ export function classifyTask(noiDung: string): 'Thường xuyên' | 'Đột xu�
 }
 
 /**
- * Lọc bỏ các ô/dòng dữ liệu tiêu đề hành chính, tiêu đề bảng, số thứ tự bị lệch
+ * Lọc bỏ các ô/dòng dữ liệu tiêu đề hành chính, tiêu đề bảng, số thứ tự bị lệch (Dùng khi Parse file Excel)
  */
 export function isIgnoredRow(text: string): boolean {
-  if (!text) return true;
+  if (!text) return false;
   const lower = String(text).toLowerCase().trim();
-  if (!lower) return true;
+  if (!lower) return false;
 
+  // Exact standalone numbers/roman numerals/stt
   if (/^\d+$/.test(lower) || lower === 'i' || lower === 'ii' || lower === 'iii' || lower === 'iv' || lower === 'stt') {
     return true;
   }
@@ -76,58 +83,52 @@ export function isIgnoredRow(text: string): boolean {
   if (
     lower === 'báo cáo' ||
     lower === 'báo cáo kết quả' ||
-    lower.startsWith('báo cáo kết quả thực hiện nhiệm vụ') ||
-    lower.startsWith('báo cáo tình hình thực hiện nhiệm vụ')
+    lower === 'báo cáo kết quả thực hiện nhiệm vụ' ||
+    lower === 'báo cáo tình hình thực hiện nhiệm vụ'
   ) {
     return true;
   }
 
   // Administrative headers
   if (
-    lower.includes('cộng hòa xã hội') ||
-    lower.includes('độc lập - tự do') ||
-    lower.includes('độc lập – tự do') ||
-    (lower.includes('ubnd thành phố') && lower.length < 40 && !lower.includes('triển khai') && !lower.includes('báo cáo') && !lower.includes('thực hiện') && !lower.includes('nhiệm vụ')) ||
-    (lower.includes('ủy ban nhân dân') && lower.length < 45 && !lower.includes('triển khai') && !lower.includes('báo cáo') && !lower.includes('thực hiện') && !lower.includes('nhiệm vụ')) ||
-    lower.includes('ban quản lý các khu') ||
-    lower.includes('văn phòng hđnd') ||
-    (lower.includes('văn phòng') && lower.length < 35 && !lower.includes('nhiệm vụ') && !lower.includes('công tác') && !lower.includes('hồ sơ') && !lower.includes('tài liệu')) ||
-    (lower.startsWith('thành phố hồ chí minh') && lower.length < 50 && (lower.includes('ngày') || lower.includes('tháng')) && !lower.includes('quy chế') && !lower.includes('nhiệm vụ') && !lower.includes('báo cáo') && !lower.includes('kế hoạch')) ||
-    lower.includes('kính gửi:') ||
-    lower.includes('phương hướng thực hiện') ||
-    lower.includes('nơi nhận:') ||
-    lower.includes('người báo cáo') ||
-    lower.includes('bộ phận tổng hợp') ||
-    lower.includes('trần thuận hóa') ||
-    lower.includes('nguyễn văn a') ||
-    lower.includes('lưu: vp') ||
-    lower.includes('lưu: vt')
+    lower === 'cộng hòa xã hội chủ nghĩa việt nam' ||
+    lower === 'độc lập - tự do - hạnh phúc' ||
+    lower === 'độc lập – tự do – hạnh phúc' ||
+    lower.startsWith('cộng hòa xã hội') ||
+    lower.startsWith('độc lập - tự do') ||
+    lower.startsWith('độc lập – tự do') ||
+    (lower.startsWith('ubnd thành phố') && lower.length < 35) ||
+    (lower.startsWith('ủy ban nhân dân') && lower.length < 35) ||
+    lower === 'kính gửi:' ||
+    lower === 'nơi nhận:'
   ) {
     return true;
   }
 
-  // Column Headers
+  // Column Headers (Exact matches)
   if (
-    lower.includes('nội dung nhiệm vụ/ công tác') ||
-    lower.includes('thời gian được giao') ||
-    lower.includes('triển khai thực hiện') ||
-    lower.includes('tiến độ thực hiện') ||
-    (lower.includes('nhiệm vụ/công tác') && lower.length < 30) ||
-    lower.includes('thời gian dự kiến') ||
-    lower.includes('sản phẩm dự kiến')
+    lower === 'nội dung nhiệm vụ' ||
+    lower === 'nội dung nhiệm vụ/ công tác' ||
+    lower === 'nhiệm vụ/công tác' ||
+    lower === 'thời gian được giao' ||
+    lower === 'thời gian hoàn thành' ||
+    lower === 'triển khai thực hiện' ||
+    lower === 'tiến độ thực hiện' ||
+    lower === 'thời gian dự kiến' ||
+    lower === 'nội dung và sản phẩm dự kiến' ||
+    lower === 'sản phẩm dự kiến'
   ) {
     return true;
   }
 
-  // Section Subheaders
+  // Section Subheaders (Exact matches)
   if (
-    lower.includes('nhiệm vụ thường xuyên (') ||
     lower === 'nhiệm vụ thường xuyên' ||
-    lower.includes('nhiệm vụ theo bút phê') ||
-    lower.includes('chỉ đạo đột xuất (') ||
-    lower.includes('kế hoạch thực hiện công tác tuần') ||
-    lower.includes('kết quả thực hiện công tác tuần') ||
-    lower.includes('khó khăn, vướng mắc, đề xuất')
+    lower === 'i. nhiệm vụ thường xuyên' ||
+    lower === 'ii. nhiệm vụ đột xuất' ||
+    lower === 'nhiệm vụ đột xuất' ||
+    lower === '1. bộ phận văn thư – lưu trữ' ||
+    lower === '2. bộ phận chuyển đổi số'
   ) {
     return true;
   }
@@ -192,9 +193,9 @@ export function sortTasksByTime<T extends { thoi_gian?: string; thoi_gian_du_kie
  * BR07 & BR08: Tự động phân nhóm, sắp xếp ngày ở trên, Thường xuyên ở dưới & đánh lại STT bắt đầu từ 1
  */
 export function processTable1(tasks: TaskTable1[]) {
-  const cleanTasks = tasks.filter(t => !isIgnoredRow(t.noi_dung));
+  const cleanTasks = (tasks || []).filter(t => t && t.id);
 
-  const sortedTx = sortTasksByTime(cleanTasks.filter(t => t.nhom === 'Thường xuyên'));
+  const sortedTx = sortTasksByTime(cleanTasks.filter(t => t.nhom !== 'Đột xuất'));
   const sortedDx = sortTasksByTime(cleanTasks.filter(t => t.nhom === 'Đột xuất'));
 
   const thuongXuyen = sortedTx.map((t, idx) => ({ ...t, stt: idx + 1 }));
@@ -213,9 +214,9 @@ export function processTable1(tasks: TaskTable1[]) {
 }
 
 export function processTable2(tasks: TaskTable2[]) {
-  const cleanTasks = tasks.filter(t => !isIgnoredRow(t.noi_dung));
+  const cleanTasks = (tasks || []).filter(t => t && t.id);
 
-  const sortedTx = sortTasksByTime(cleanTasks.filter(t => t.nhom === 'Thường xuyên'));
+  const sortedTx = sortTasksByTime(cleanTasks.filter(t => t.nhom !== 'Đột xuất'));
   const sortedDx = sortTasksByTime(cleanTasks.filter(t => t.nhom === 'Đột xuất'));
 
   const thuongXuyen = sortedTx.map((t, idx) => ({ ...t, stt: idx + 1 }));

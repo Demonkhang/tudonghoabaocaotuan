@@ -19,9 +19,10 @@ interface UserProfileModalProps {
   onClose: () => void;
   currentUser: UserAccountInfo | null;
   onUpdateSuccess: (updatedUser: UserAccountInfo) => void;
+  onOpenSignatureSetup?: () => void;
 }
 
-export function UserProfileModal({ isOpen, onClose, currentUser, onUpdateSuccess }: UserProfileModalProps) {
+export function UserProfileModal({ isOpen, onClose, currentUser, onUpdateSuccess, onOpenSignatureSetup }: UserProfileModalProps) {
   const [fullName, setFullName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -198,21 +199,36 @@ export function UserProfileModal({ isOpen, onClose, currentUser, onUpdateSuccess
           </div>
 
           {/* ACTION BUTTONS */}
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-            >
-              Hủy Bỏ
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="px-6 py-2 bg-[#005dac] hover:bg-[#004786] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-            >
-              {isLoading ? 'Đang cập nhật...' : 'Lưu Thay Đổi'}
-            </button>
+          <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+            {onOpenSignatureSetup ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenSignatureSetup();
+                }}
+                className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>🖋️ Chữ Ký & PIN 6 Số</span>
+              </button>
+            ) : <div />}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="px-6 py-2 bg-[#005dac] hover:bg-[#004786] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                {isLoading ? 'Đang cập nhật...' : 'Lưu Thay Đổi'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

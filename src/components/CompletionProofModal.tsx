@@ -53,6 +53,24 @@ export function CompletionProofModal({ isOpen, taskTitle, onClose, onConfirm }: 
     setFile(null);
   };
 
+  const handleInsertTemplate = (templateType: 'BC' | 'PTr' | 'CV') => {
+    let templateStr = '';
+    if (templateType === 'BC') {
+      templateStr = 'Số 125/BC-VP - Báo cáo ';
+    } else if (templateType === 'PTr') {
+      templateStr = 'Số 45/PTr-VP - Phiếu trình ';
+    } else {
+      templateStr = 'Số 234/CV-VP - Công văn ';
+    }
+    setSanPham(prev => (prev ? `${prev}\n${templateStr}` : templateStr));
+  };
+
+  const isStandardFormat = (text: string) => {
+    if (!text || !text.trim()) return false;
+    const trimmed = text.trim();
+    return trimmed.includes('/') && trimmed.includes('-');
+  };
+
   // Rule: Must have EITHER an uploaded file OR non-empty product text
   const isValid = file !== null || sanPham.trim().length > 0;
 
@@ -166,19 +184,68 @@ export function CompletionProofModal({ isOpen, taskTitle, onClose, onConfirm }: 
           </div>
 
           {/* SECTION 2: MÔ TẢ SẢN PHẨM / KẾT QUẢ */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-200 flex items-center gap-1.5">
-              <FileText className="w-4 h-4 text-blue-400" />
-              2. Mô tả Sản phẩm / Kết quả đạt được:
-              {!file && <span className="text-amber-400 font-bold text-[11px]">(Bắt buộc nếu không có file)</span>}
-            </label>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="block text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-blue-400" />
+                <span>2. Mô tả Sản phẩm / Kết quả đạt được:</span>
+                {!file && <span className="text-amber-400 font-bold text-[11px]">(Bắt buộc nếu không có file)</span>}
+              </label>
+              <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md font-extrabold">
+                Cấu trúc chuẩn: Số/ - Trích yếu
+              </span>
+            </div>
+
+            {/* Nút chèn nhanh mẫu cấu trúc */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+              <span className="text-slate-400 font-medium">Chèn mẫu nhanh:</span>
+              <button
+                type="button"
+                onClick={() => handleInsertTemplate('BC')}
+                className="px-2 py-0.5 bg-blue-900/50 hover:bg-blue-800 text-blue-200 border border-blue-700/60 rounded-md font-bold transition-all cursor-pointer"
+                title="Chèn mẫu Báo cáo: Số .../BC-VP - Trích yếu"
+              >
+                + Mẫu Báo cáo (Số/BC - Trích yếu)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInsertTemplate('PTr')}
+                className="px-2 py-0.5 bg-purple-900/50 hover:bg-purple-800 text-purple-200 border border-purple-700/60 rounded-md font-bold transition-all cursor-pointer"
+                title="Chèn mẫu Phiếu trình: Số .../PTr-VP - Trích yếu"
+              >
+                + Mẫu Phiếu trình (Số/PTr - Trích yếu)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInsertTemplate('CV')}
+                className="px-2 py-0.5 bg-teal-900/50 hover:bg-teal-800 text-teal-200 border border-teal-700/60 rounded-md font-bold transition-all cursor-pointer"
+                title="Chèn mẫu Công văn: Số .../CV-VP - Trích yếu"
+              >
+                + Mẫu Công văn (Số/CV - Trích yếu)
+              </button>
+            </div>
+
             <textarea
               rows={3}
               value={sanPham}
               onChange={e => setSanPham(e.target.value)}
-              placeholder="Ví dụ: Báo cáo số 125/BC-VP ngày 15/10/2026, Phiếu trình 45/PTr-VP..."
-              className="w-full p-3 bg-slate-950/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-sans"
+              placeholder="Nhập đúng cấu trúc: Số [Số VB]/[Tên viết tắt VB] - [Trích yếu nội dung] (Ví dụ: Số 125/BC-VP - Báo cáo thực hiện công tác tuần...)"
+              className={`w-full p-3 bg-slate-950/80 border rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none font-sans transition-colors ${
+                sanPham.trim().length > 0 && !isStandardFormat(sanPham)
+                  ? 'border-amber-500/80 focus:border-amber-400'
+                  : 'border-slate-700/80 focus:border-emerald-500'
+              }`}
             />
+
+            {/* Cảnh báo định dạng cấu trúc chuẩn */}
+            {sanPham.trim().length > 0 && !isStandardFormat(sanPham) && (
+              <div className="p-2 bg-amber-500/15 border border-amber-500/40 rounded-xl text-amber-300 text-[11px] flex items-center gap-1.5 animate-fadeIn font-medium">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Lưu ý cấu trúc:</strong> Nội dung mô tả nên có dạng <code>Số/ - Trích yếu</code> (Ví dụ: <code>Số 125/BC-VP - Báo cáo...</code>).
+                </span>
+              </div>
+            )}
           </div>
 
           {/* VALIDATION WARNING BANNER */}

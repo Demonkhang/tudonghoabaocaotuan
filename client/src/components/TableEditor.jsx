@@ -20,7 +20,7 @@ export function TableEditor({
       prev.map(item => {
         if (item.id === id) {
           const updated = { ...item, [field]: value, isEdited: true };
-          if (field === 'noi_dung') updated.nhom = classifyTask(value);
+          if (field === 'noi_dung' && !item.nhom) updated.nhom = classifyTask(value);
           return updated;
         }
         return item;
@@ -33,7 +33,7 @@ export function TableEditor({
       prev.map(item => {
         if (item.id === id) {
           const updated = { ...item, [field]: value, isEdited: true };
-          if (field === 'noi_dung') updated.nhom = classifyTask(value);
+          if (field === 'noi_dung' && !item.nhom) updated.nhom = classifyTask(value);
           return updated;
         }
         return item;

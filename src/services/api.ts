@@ -83,6 +83,51 @@ export async function saveReportData(payload: any, accountId?: string) {
   }
 }
 
+export async function fetchConsolidatedReportDetail(week: number, year: number, departmentId?: string, accountId?: string) {
+  try {
+    let url = `/api/reports/consolidated/detail?week=${week}&year=${year}`;
+    if (departmentId) url += `&department_id=${departmentId}`;
+    if (accountId) url += `&account_id=${accountId}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Không thể tải báo cáo tổng hợp');
+    return await res.json();
+  } catch (err: any) {
+    console.warn('Lỗi fetchConsolidatedReportDetail:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function saveConsolidatedReportData(payload: any) {
+  try {
+    const res = await fetch('/api/reports/consolidated/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) throw new Error(result.error || 'Lỗi lưu báo cáo tổng hợp');
+    return result;
+  } catch (err: any) {
+    console.error('Lỗi saveConsolidatedReportData:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function exportConsolidatedWordReport(payload: any) {
+  try {
+    const res = await fetch('/api/generate-word-consolidated', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Lỗi xuất file Word báo cáo tổng hợp');
+    const blob = await res.blob();
+    downloadBlob(blob, `BAO_CAO_TONG_HOP_TUAN_${payload.metadata?.tuan || 38}_NĐ30.docx`);
+  } catch (err: any) {
+    alert('Lỗi xuất file Word báo cáo tổng hợp: ' + err.message);
+  }
+}
+
 export async function shareReportApi(reportId: string, sharedWithAccountId: string, permission: 'VIEW' | 'EDIT', senderAccountId: string) {
   try {
     const res = await fetch('/api/reports/share', {
@@ -1316,6 +1361,94 @@ export async function fetchCandidateTasks(departmentId: string, accountId?: stri
   } catch (err: any) {
     console.error('Lỗi fetchCandidateTasks:', err);
     return { success: false, tasks: [] };
+  }
+}
+
+export async function updateSignatureAndPinApi(accountId: string, pinCode: string, signatureUrl: string) {
+  try {
+    const res = await fetch('/api/user/signature-pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, pin_code: pinCode, signature_url: signatureUrl })
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi updateSignatureAndPinApi:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function submitReportForApprovalApi(
+  reportId: string,
+  accountId: string,
+  approverIds: string[],
+  approverSlots?: { to_truong_id?: string; pho_chanh_van_phong_id?: string; chanh_van_phong_id?: string }
+) {
+  try {
+    const res = await fetch('/api/reports/submit-approval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        report_id: reportId,
+        account_id: accountId,
+        approver_ids: approverIds,
+        approver_slots: approverSlots
+      })
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi submitReportForApprovalApi:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchPendingReportsApi(accountId: string) {
+  try {
+    const res = await fetch(`/api/reports/pending-approval?account_id=${encodeURIComponent(accountId)}`);
+    if (!res.ok) throw new Error('Không thể lấy danh sách báo cáo chờ duyệt');
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi fetchPendingReportsApi:', err);
+    return { success: false, reports: [] };
+  }
+}
+
+export async function signReportWithPinApi(reportId: string, accountId: string, pinCode: string, note?: string) {
+  try {
+    const res = await fetch('/api/reports/sign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ report_id: reportId, account_id: accountId, pin_code: pinCode, note })
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi signReportWithPinApi:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchReportSignaturesApi(reportId: string) {
+  try {
+    const res = await fetch(`/api/reports/signatures?report_id=${encodeURIComponent(reportId)}`);
+    if (!res.ok) throw new Error('Không thể lấy chữ ký');
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi fetchReportSignaturesApi:', err);
+    return { success: false, signatures: [] };
+  }
+}
+
+export async function finalizeReportApi(reportId: string, accountId: string) {
+  try {
+    const res = await fetch('/api/reports/finalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ report_id: reportId, account_id: accountId })
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi finalizeReportApi:', err);
+    return { success: false, error: err.message };
   }
 }
 

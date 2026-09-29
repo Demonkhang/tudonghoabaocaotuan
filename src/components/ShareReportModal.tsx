@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Share2, Users, Eye, Edit3, Trash2, Shield, CheckCircle2, AlertCircle, X } from 'lucide-react';
-import { shareReportApi, fetchReportShares, revokeReportShareApi } from '../services/api';
+import { shareReportApi, fetchReportShares, revokeReportShareApi, fetchAdminAccounts } from '../services/api';
 
 interface ShareReportModalProps {
   isOpen: boolean;
@@ -51,11 +51,11 @@ export const ShareReportModal: React.FC<ShareReportModalProps> = ({
   const loadAccountsAndShares = async () => {
     setLoading(true);
     try {
-      // Fetch accounts list
-      const deptsRes = await fetch('/api/departments').then(r => r.json());
-      if (deptsRes.success && deptsRes.accounts) {
+      // Fetch accounts list from admin API
+      const accsRes = await fetchAdminAccounts();
+      if (accsRes && accsRes.accounts) {
         // Filter out current user
-        const otherAccs = deptsRes.accounts.filter((a: AccountItem) => a.id !== currentUser.id);
+        const otherAccs = accsRes.accounts.filter((a: any) => a.id !== currentUser.id && a.is_active !== 0);
         setAccounts(otherAccs);
         if (otherAccs.length > 0 && !selectedAccountId) {
           setSelectedAccountId(otherAccs[0].id);
@@ -63,9 +63,11 @@ export const ShareReportModal: React.FC<ShareReportModalProps> = ({
       }
 
       // Fetch shares for this report
-      const sharesRes = await fetchReportShares(reportId);
-      if (sharesRes.success) {
-        setShares(sharesRes.shares || []);
+      if (reportId) {
+        const sharesRes = await fetchReportShares(reportId);
+        if (sharesRes && sharesRes.success) {
+          setShares(sharesRes.shares || []);
+        }
       }
     } catch (err: any) {
       console.error('Lỗi nạp danh sách chia sẻ:', err);
