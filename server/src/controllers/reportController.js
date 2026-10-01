@@ -776,103 +776,177 @@ export async function carryOverNextWeek(req, res) {
       SELECT * FROM reports WHERE account_id = ? AND week_number = ? AND year = ?
     `).get(accId, currWeek, currYear);
 
-    if (!currentReport && isAdmin && department_id) {
-      // Fallback search by department cho ADMIN
+    const consolidatedMasterId = `rpt_consolidated_office_w${currWeek}_${currYear}`;
+    const consolidatedReport = db.prepare('SELECT * FROM reports WHERE id = ?').get(consolidatedMasterId);
+
+    if (!currentReport && consolidatedReport) {
+      currentReport = consolidatedReport;
+    } else if (!currentReport && isAdmin && department_id) {
       currentReport = db.prepare(`
         SELECT * FROM reports WHERE department_id = ? AND week_number = ? AND year = ?
       `).get(department_id, currWeek, currYear);
     }
 
-    if (!currentReport) {
+    if (!currentReport && !consolidatedReport) {
       return res.status(404).json({ success: false, error: `Không tìm thấy báo cáo Tuần ${currWeek}/${currYear} để kết chuyển` });
     }
 
-    // 2. Lấy danh sách nhiệm vụ của tuần hiện tại
-    const currentTasks = db.prepare('SELECT * FROM tasks WHERE report_id = ? ORDER BY order_index ASC').all(currentReport.id);
+    const isConsolidated = (currentReport && currentReport.report_type === 'CONSOLIDATED_OFFICE') || Boolean(consolidatedReport);
+    const activeReportId = isConsolidated ? consolidatedMasterId : currentReport.id;
 
-    // 3. Lọc nhiệm vụ dở dang từ Bảng I (tien_do != 'Hoàn thành')
-    const unfinishedTable1 = currentTasks.filter(t => t.table_type === 1 && t.tien_do !== 'Hoàn thành');
+    // 2. Lấy danh sách nhiệm vụ của tuần hiện tại (kèm team_code của từng tổ)
+    let currentTasks = db.prepare(`
+      SELECT t.*, COALESCE(t.team_code, 'VAN_THU') as team_code
+      FROM tasks t
+      WHERE t.report_id = ? OR t.report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)
+      ORDER BY t.order_index ASC
+    `).all(activeReportId, activeReportId);
 
-    // 4. Lấy các mục kế hoạch từ Bảng II (sẽ trở thành nhiệm vụ Bảng I tuần mới)
-    const plannedTable2 = currentTasks.filter(t => t.table_type === 2);
+    // Nếu người dùng gửi danh sách các ID được chọn (selected_task_ids)
+    const { selected_task_ids } = req.body;
+    if (Array.isArray(selected_task_ids) && selected_task_ids.length > 0) {
+      const selectedSet = new Set(selected_task_ids);
+      currentTasks = currentTasks.filter(t => selectedSet.has(t.id));
+    }
 
-    // 5. Báo cáo target report cho account
-    const targetReportId = `rpt_${accId}_w${targetWeek}_${targetYear}`;
+    // 3. Phân loại 3 nhóm kế thừa:
+    // Nhóm A: Nhiệm vụ Bảng I thuộc nhóm "Thường xuyên" (kế thừa lặp lại hàng tuần)
+    const routineTable1 = currentTasks.filter(t => t.table_type === 1 && (t.category === 'Thường xuyên' || t.is_recurring === 1));
+    const routineIds = new Set(routineTable1.map(t => t.id));
+
+    // Nhóm B: Nhiệm vụ Bảng I chưa hoàn thành (Đang thực hiện / Chưa thực hiện / Hoàn thành trễ, không bị trùng với nhóm Thường xuyên)
+    const unfinishedTable1 = currentTasks.filter(t => t.table_type === 1 && t.tien_do !== 'Hoàn thành' && !routineIds.has(t.id));
+
+    // Nhóm C: Kế hoạch Bảng II đôn lên Bảng I tuần mới
+    const plannedTable2 = currentTasks.filter(t => t.table_type === 2 && t.noi_dung && t.noi_dung.trim().length > 0);
+
+    // 4. Khởi tạo Báo cáo target report cho account / consolidated master
+    const targetReportId = isConsolidated
+      ? `rpt_consolidated_office_w${targetWeek}_${targetYear}`
+      : `rpt_${accId}_w${targetWeek}_${targetYear}`;
+
     const existingTargetReport = db.prepare('SELECT id FROM reports WHERE id = ?').get(targetReportId);
 
     if (existingTargetReport) {
       db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
     } else {
-      db.prepare(`
-        INSERT INTO reports (id, department_id, account_id, week_number, year, status, kho_khan)
-        VALUES (?, ?, ?, ?, ?, 'DRAFT', 'Chưa có vướng mắc phát sinh')
-      `).run(targetReportId, currentReport.department_id, accId, targetWeek, targetYear);
+      if (isConsolidated) {
+        db.prepare(`
+          INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan)
+          VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', 'Chưa có vướng mắc phát sinh')
+        `).run(targetReportId, department_id || 'dept_vp', accId, targetWeek, targetYear);
+      } else {
+        db.prepare(`
+          INSERT INTO reports (id, department_id, account_id, week_number, year, status, kho_khan)
+          VALUES (?, ?, ?, ?, ?, 'DRAFT', 'Chưa có vướng mắc phát sinh')
+        `).run(targetReportId, currentReport.department_id || department_id || 'dept_vp', accId, targetWeek, targetYear);
+      }
     }
 
     const stmtInsertTask = db.prepare(`
-      INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index, is_recurring, team_code, is_starred)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     let newOrderIndex = 1;
     const carriedOverTasks = [];
+    const addedContents = new Set();
 
-    // Chèn nhiệm vụ chưa hoàn thành từ Bảng I tuần cũ vào Bảng I tuần mới
+    // 1. Chèn Nhiệm vụ Thường xuyên Bảng I
+    routineTable1.forEach(t => {
+      const cleanContent = (t.noi_dung || '').trim().toLowerCase();
+      const itemKey = `t1_${t.team_code || 'VAN_THU'}_${cleanContent}`;
+      if (!cleanContent || addedContents.has(itemKey)) return;
+      addedContents.add(itemKey);
+
+      const newId = `co_tx_${t.id}_${Date.now()}`;
+      const isStarred = t.is_starred !== undefined ? t.is_starred : 1;
+      // Nếu tuần cũ đã hoàn thành thì làm sạch trien_khai; nếu đang thực hiện thì giữ lại trien_khai tiến độ
+      const finalTrienKhai = (t.tien_do === 'Hoàn thành') ? '' : (t.trien_khai || '');
+
+      stmtInsertTask.run(
+        newId,
+        targetReportId,
+        1, // Table 1
+        'Thường xuyên',
+        t.noi_dung,
+        'Thường xuyên',
+        finalTrienKhai,
+        'Đang thực hiện',
+        '', // Reset sản phẩm hoàn thành cũ
+        t.id,
+        newOrderIndex++,
+        1,
+        t.team_code || 'VAN_THU',
+        isStarred
+      );
+      carriedOverTasks.push({ id: newId, noi_dung: t.noi_dung, type: 'THUONG_XUYEN', source: 'Nhiệm vụ Thường xuyên Bảng I', team_code: t.team_code });
+    });
+
+    // 2. Chèn Nhiệm vụ Chưa Hoàn thành Bảng I (Đang thực hiện / Chưa xong)
     unfinishedTable1.forEach(t => {
-      const newId = `co_t1_${t.id}_${Date.now()}`;
+      const cleanContent = (t.noi_dung || '').trim().toLowerCase();
+      const itemKey = `t1_${t.team_code || 'VAN_THU'}_${cleanContent}`;
+      if (!cleanContent || addedContents.has(itemKey)) return;
+      addedContents.add(itemKey);
+
+      const newId = `co_uf_${t.id}_${Date.now()}`;
+      const isStarred = t.is_starred !== undefined ? t.is_starred : 0;
+      // Bảo toàn nội dung tiến độ / triển khai dở dang của nhiệm vụ chưa hoàn thành
+      const finalTrienKhai = t.trien_khai || '';
+
       stmtInsertTask.run(
         newId,
         targetReportId,
-        1,
-        t.category,
+        1, // Table 1
+        t.category || 'Đột xuất',
         t.noi_dung,
         t.thoi_gian || 'Trong tuần',
-        t.trien_khai || 'Báo cáo tiếp tục thực hiện',
+        finalTrienKhai,
         'Đang thực hiện',
-        '',
+        '', // Reset sản phẩm hoàn thành cũ
         t.id,
-        newOrderIndex++
+        newOrderIndex++,
+        t.is_recurring || 0,
+        t.team_code || 'VAN_THU',
+        isStarred
       );
-      carriedOverTasks.push({ id: newId, noi_dung: t.noi_dung, source: 'Nhiệm vụ dở dang Bảng I' });
+      carriedOverTasks.push({ id: newId, noi_dung: t.noi_dung, type: 'UNFINISHED', source: 'Nhiệm vụ dở dang Bảng I', team_code: t.team_code });
     });
 
-    // Chèn Kế hoạch Bảng II tuần cũ vào Bảng I tuần mới
+    // 3. Chèn Kế hoạch Bảng II tuần cũ sang BẢNG II tuần mới (Duy trì cho cả Tổ Văn thư và Tổ Chuyển đổi số)
     plannedTable2.forEach(t => {
-      const newId = `co_t2to1_${t.id}_${Date.now()}`;
+      const cleanContent = (t.noi_dung || '').trim().toLowerCase();
+      const itemKey = `t2_${t.team_code || 'VAN_THU'}_${cleanContent}`;
+      if (!cleanContent || addedContents.has(itemKey)) return;
+      addedContents.add(itemKey);
+
+      const newId = `co_t2_${t.id}_${Date.now()}`;
+      const isStarred = t.is_starred !== undefined ? t.is_starred : (t.category === 'Thường xuyên' || t.is_recurring ? 1 : 0);
+      const finalTrienKhai = t.trien_khai || '';
+
       stmtInsertTask.run(
         newId,
         targetReportId,
-        1,
-        t.category,
+        2, // Table 2 - Giữ đúng Bảng II Kế hoạch
+        t.category || 'Thường xuyên',
         t.noi_dung,
-        t.thoi_gian || 'Trong tuần',
-        'Triển khai theo kế hoạch tuần trước',
+        t.thoi_gian_du_kien || t.thoi_gian || 'Trong tuần',
+        finalTrienKhai,
         'Đang thực hiện',
-        '',
+        t.san_pham_du_kien || t.san_pham || '', // Giữ sản phẩm dự kiến/mục tiêu
         t.id,
-        newOrderIndex++
+        newOrderIndex++,
+        t.is_recurring || 0,
+        t.team_code || 'VAN_THU',
+        isStarred
       );
-      carriedOverTasks.push({ id: newId, noi_dung: t.noi_dung, source: 'Kế hoạch Bảng II' });
+      carriedOverTasks.push({ id: newId, noi_dung: t.noi_dung, type: 'PLANNED_TABLE2', source: 'Kế hoạch Bảng II', team_code: t.team_code });
     });
-
-    // Tạo sẵn 1 nhiệm vụ mẫu Bảng II cho tuần mới
-    stmtInsertTask.run(
-      `init_t2_${targetReportId}`,
-      targetReportId,
-      2,
-      'Thường xuyên',
-      'Xây dựng kế hoạch công tác tuần tiếp theo',
-      'Trong tuần',
-      '',
-      '',
-      'Dự thảo Kế hoạch',
-      null,
-      1
-    );
 
     return res.json({
       success: true,
-      message: `Đã tự động kết chuyển thành công ${carriedOverTasks.length} nhiệm vụ sang Báo cáo Tuần ${targetWeek}/${targetYear}`,
+      message: `Đã tự động kế thừa thành công ${carriedOverTasks.length} nhiệm vụ sang Báo cáo Tuần ${targetWeek}/${targetYear}`,
       new_report_id: targetReportId,
       target_week: targetWeek,
       target_year: targetYear,

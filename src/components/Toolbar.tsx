@@ -371,10 +371,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={onOpenCarryOver}
               disabled={isReadOnly}
               className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-950/80 hover:bg-amber-900 border border-amber-800 text-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 disabled:opacity-40"
-              title="Kế thừa công việc dở dang tuần trước"
+              title="Kế thừa & Khởi tạo Nhiệm vụ Thường xuyên & Dở dang sang Tuần tiếp theo"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Kế thừa</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+              <span>Kế thừa Tuần mới</span>
             </button>
 
             {/* TRÌNH DUYỆT BÁO CÁO */}

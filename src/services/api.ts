@@ -398,7 +398,7 @@ export async function fetchSyncedDirectiveTasks(accountId: string, week?: number
   }
 }
 
-export async function triggerCarryOver(departmentId: string, currentWeek: number, currentYear: number, accountId: string) {
+export async function triggerCarryOver(departmentId: string, currentWeek: number, currentYear: number, accountId: string, selectedTaskIds?: string[]) {
   try {
     const res = await fetch('/api/reports/carry-over', {
       method: 'POST',
@@ -407,7 +407,8 @@ export async function triggerCarryOver(departmentId: string, currentWeek: number
         department_id: departmentId,
         current_week: currentWeek,
         current_year: currentYear,
-        account_id: accountId
+        account_id: accountId,
+        selected_task_ids: selectedTaskIds
       })
     });
     return await res.json();

@@ -589,8 +589,8 @@ export default function App() {
     showToast(`Đã nạp báo cáo Tuần ${week}/${year}`);
   };
 
-  // CORE ACTION: Kế thừa nhiệm vụ chưa hoàn thành sang Tuần mới
-  const handleConfirmCarryOver = async () => {
+  // CORE ACTION: Kế thừa nhiệm vụ Thường xuyên & Chưa hoàn thành sang Tuần mới
+  const handleConfirmCarryOver = async (selectedTaskIds?: string[]) => {
     if (!currentUser) return;
     setIsLoading(true);
 
@@ -598,7 +598,8 @@ export default function App() {
       currentUser.department_id,
       metadata.tuan,
       metadata.nam,
-      currentUser.id
+      currentUser.id,
+      selectedTaskIds
     );
 
     setIsLoading(false);
@@ -614,10 +615,18 @@ export default function App() {
         nam: nextY
       }));
 
-      // Nạp dữ liệu báo cáo tuần mới đã được tự động kết chuyển
-      await loadReportFromDB(currentUser.department_id, nextW, nextY, res.new_report_id);
+      // QUAN TRỌNG: Bảo toàn đúng vị trí Form & Không gian làm việc khi kết chuyển sang tuần mới
+      if (reportType === 'CONSOLIDATED_OFFICE') {
+        await loadConsolidatedReport(nextW, nextY, activeTeamCode);
+      } else {
+        await loadReportFromDB(currentUser.department_id, nextW, nextY, res.new_report_id);
+      }
 
-      showToast(`🎉 ${res.message}! Đã chuyển ${res.carried_over_count} nhiệm vụ dở dang sang Tuần ${nextW}.`);
+      const formNameStr = reportType === 'CONSOLIDATED_OFFICE'
+        ? (activeTeamCode === 'VAN_THU' ? 'Tổ Văn thư – Lưu trữ' : activeTeamCode === 'CDS' ? 'Tổ Chuyển đổi số' : 'Master Tổng Hợp NĐ30')
+        : 'Form Báo cáo Đơn';
+
+      showToast(`🎉 ${res.message}! Đã chuyển đến đúng vị trí ${formNameStr} ở Tuần ${nextW}.`);
     } else {
       alert("Lỗi khi kết chuyển: " + (res.error || "Không thể khởi tạo tuần mới"));
     }
@@ -1402,6 +1411,8 @@ export default function App() {
         table1={table1}
         table2={table2}
         currentUser={currentUser}
+        reportType={reportType}
+        activeTeamCode={activeTeamCode}
         onConfirmCarryOver={handleConfirmCarryOver}
       />
 
