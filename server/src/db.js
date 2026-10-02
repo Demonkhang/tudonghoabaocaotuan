@@ -182,6 +182,7 @@ function initDatabase() {
       department_name TEXT NOT NULL,
       total_checked INTEGER DEFAULT 0,
       error_count INTEGER DEFAULT 0,
+      total_pages INTEGER DEFAULT 0,
       order_index INTEGER DEFAULT 0,
       FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
     );
@@ -335,6 +336,12 @@ function migrateConsolidatedTables() {
     const hasTaskTeamCode = taskCols.some(col => col.name === 'team_code');
     if (!hasTaskTeamCode) {
       db.exec("ALTER TABLE tasks ADD COLUMN team_code TEXT DEFAULT '';");
+    }
+
+    const docStatCols = db.prepare("PRAGMA table_info(doc_inspection_stats)").all();
+    if (docStatCols.length > 0 && !docStatCols.some(c => c.name === 'total_pages')) {
+      console.log('🔄 Đang thêm cột total_pages vào bảng doc_inspection_stats...');
+      db.exec("ALTER TABLE doc_inspection_stats ADD COLUMN total_pages INTEGER DEFAULT 0;");
     }
   } catch (err) {
     console.error('Lỗi khi migrate Consolidated Tables:', err);

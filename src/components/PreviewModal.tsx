@@ -728,7 +728,8 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                       <th className="border border-black px-2 py-1.5 w-12">STT</th>
                       <th className="border border-black px-2 py-1.5">Phòng</th>
                       <th className="border border-black px-2 py-1.5 w-36">Tổng số VB kiểm tra</th>
-                      <th className="border border-black px-2 py-1.5 w-32">Số lỗi</th>
+                      <th className="border border-black px-2 py-1.5 w-28">Số lỗi</th>
+                      <th className="border border-black px-2 py-1.5 w-32">Tổng số trang</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -741,6 +742,9 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                         </td>
                         <td className="border border-black px-2 py-1 text-center font-bold text-slate-900">
                           {String(item.error_count).padStart(2, '0')}
+                        </td>
+                        <td className="border border-black px-2 py-1 text-center font-bold text-slate-900">
+                          {item.total_pages !== undefined ? item.total_pages : 0}
                         </td>
                       </tr>
                     ))}

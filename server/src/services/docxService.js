@@ -763,12 +763,12 @@ export function createConsolidatedOfficeDocx(data) {
   const docStats = (data.doc_inspection_stats && data.doc_inspection_stats.length > 0)
     ? data.doc_inspection_stats
     : [
-        { department_name: 'Văn phòng', total_checked: 1, error_count: 0 },
-        { department_name: 'Phòng Kế hoạch Tài chính', total_checked: 12, error_count: 0 },
-        { department_name: 'Phòng Quản lý Dự án', total_checked: 11, error_count: 4 },
-        { department_name: 'Phòng Giám sát Khu liên hợp', total_checked: 5, error_count: 1 },
-        { department_name: 'Phòng Giám sát Khối lượng', total_checked: 0, error_count: 0 },
-        { department_name: 'Phòng Kiểm tra Môi trường', total_checked: 11, error_count: 2 }
+        { department_name: 'Văn phòng', total_checked: 5, error_count: 0, total_pages: 8 },
+        { department_name: 'Phòng Kế hoạch Tài chính', total_checked: 20, error_count: 0, total_pages: 26 },
+        { department_name: 'Phòng Quản lý Dự án', total_checked: 9, error_count: 7, total_pages: 27 },
+        { department_name: 'Phòng Giám sát Khu liên hợp', total_checked: 2, error_count: 0, total_pages: 6 },
+        { department_name: 'Phòng Giám sát Khối lượng', total_checked: 2, error_count: 0, total_pages: 4 },
+        { department_name: 'Phòng Kiểm tra Môi trường', total_checked: 26, error_count: 7, total_pages: 39 }
       ];
 
   const meta = data.consolidated_meta || {
@@ -889,7 +889,8 @@ export function createConsolidatedOfficeDocx(data) {
       stt: idx + 1,
       phong: ds.department_name || '',
       tong_vb: String(ds.total_checked ?? 0).padStart(2, '0'),
-      so_loi: String(ds.error_count ?? 0).padStart(2, '0')
+      so_loi: String(ds.error_count ?? 0).padStart(2, '0'),
+      tong_trang: String(ds.total_pages ?? 0)
     }))
   };
 
@@ -1115,16 +1116,18 @@ function createConsolidatedDocxZipTemplate() {
     <w:tbl>
       <w:tblPr><w:tblW w:w="9355" w:type="dxa"/><w:tblBorders><w:top w:val="single"/><w:left w:val="single"/><w:bottom w:val="single"/><w:right w:val="single"/><w:insideH w:val="single"/><w:insideV w:val="single"/></w:tblBorders></w:tblPr>
       <w:tr>
-        <w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>STT</w:t></w:r></w:p></w:tc>
-        <w:tc><w:tcPr><w:tcW w:w="4355" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>Phòng</w:t></w:r></w:p></w:tc>
-        <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>Tổng số VB kiểm tra</w:t></w:r></w:p></w:tc>
-        <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>Số lỗi</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="800" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>STT</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="3555" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>Phòng</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>Tổng số VB kiểm tra</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1600" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>Số lỗi</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1600" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>Tổng số trang</w:t></w:r></w:p></w:tc>
       </w:tr>
       <w:tr>
-        <w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{#doc_stats}{stt}</w:t></w:r></w:p></w:tc>
-        <w:tc><w:tcPr><w:tcW w:w="4355" w:type="dxa"/></w:tcPr><w:p><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{phong}</w:t></w:r></w:p></w:tc>
-        <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{tong_vb}</w:t></w:r></w:p></w:tc>
-        <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{so_loi}{/doc_stats}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="800" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{#doc_stats}{stt}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="3555" w:type="dxa"/></w:tcPr><w:p><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{phong}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{tong_vb}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1600" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{so_loi}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1600" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>{tong_trang}{/doc_stats}</w:t></w:r></w:p></w:tc>
       </w:tr>
     </w:tbl>
 

@@ -109,6 +109,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'RESOLVED' | 'IN_PROGRESS' | 'BACKLOG' | 'STORE'>('ALL');
   const [groupFilter, setGroupFilter] = useState<'ALL' | 'Thường xuyên' | 'Đột xuất' | 'Chỉ đạo'>('ALL');
   const [weekFilter, setWeekFilter] = useState<string>('ALL');
+  const [personalWeekMode, setPersonalWeekMode] = useState<'CURRENT_WEEK' | 'ALL'>('CURRENT_WEEK');
   const [timeRange, setTimeRange] = useState<'THIS_WEEK' | 'LAST_4_WEEKS' | 'THIS_MONTH' | 'ALL'>('ALL');
   const [activeTab, setActiveTab] = useState<'ALL' | 'BACKLOG' | 'STORE' | 'RESOLVED'>('ALL');
 
@@ -172,7 +173,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   // Reset pagination to page 1 whenever any filter or main tab changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [mainTab, searchQuery, selectedDeptId, selectedUserId, statusFilter, groupFilter, weekFilter, activeTab, pageSize]);
+  }, [mainTab, personalWeekMode, searchQuery, selectedDeptId, selectedUserId, statusFilter, groupFilter, weekFilter, activeTab, pageSize]);
 
   // Handle department filter change for Manager
   const handleDepartmentChange = (deptId: string) => {
@@ -360,14 +361,71 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     return rawUnifiedTasks.filter(t => !localDeletedTaskIds.has(t.id));
   }, [rawUnifiedTasks, localDeletedTaskIds]);
 
-  // Main tab counts calculation
-  const personalCount = useMemo(() => {
-    return unifiedTasks.filter(t => t.source === 'REPORT').length;
-  }, [unifiedTasks]);
+  // Helper to determine if a directive task is assigned to the current logged in user
+  const isAssignedToCurrentUser = useMemo(() => {
+    return (task: UnifiedTask): boolean => {
+      if (!currentUser?.id) return true;
+      
+      // 1. Direct assignee ID match
+      if (task.assigneeId && task.assigneeId === currentUser.id) return true;
 
-  const directiveCount = useMemo(() => {
-    return unifiedTasks.filter(t => t.source === 'STANDALONE' || t.group === 'Chỉ đạo').length;
-  }, [unifiedTasks]);
+      // 2. Original item fields check
+      const orig = task.originalItem;
+      if (orig) {
+        if (orig.current_assignee_id === currentUser.id) return true;
+        if (orig.assignee_id === currentUser.id) return true;
+        if (orig.created_by === currentUser.id) return true;
+        if (orig.current_assigner_id === currentUser.id) return true;
+
+        if (orig.assigned_assignees) {
+          if (typeof orig.assigned_assignees === 'string' && orig.assigned_assignees.includes(currentUser.id)) {
+            return true;
+          }
+          if (Array.isArray(orig.assigned_assignees)) {
+            const isInArray = orig.assigned_assignees.some((a: any) => 
+              a === currentUser.id || a?.id === currentUser.id || a?.assignee_id === currentUser.id || a?.account_id === currentUser.id
+            );
+            if (isInArray) return true;
+          }
+        }
+      }
+
+      // 3. Assignee name matching currentUser full_name
+      if (currentUser.full_name && task.assigneeName) {
+        const nameA = task.assigneeName.toLowerCase().trim();
+        const nameB = currentUser.full_name.toLowerCase().trim();
+        if (nameA === nameB || (nameA !== 'chưa gán' && (nameA.includes(nameB) || nameB.includes(nameA)))) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+  }, [currentUser]);
+
+  const activeReportWeek = currentWeek || 39;
+
+  // Main tab counts calculation
+  const personalTasksTotal = useMemo(() => {
+    return unifiedTasks.filter(t => {
+      if (t.source !== 'REPORT') return false;
+      if (personalWeekMode === 'CURRENT_WEEK') {
+        const taskW = t.weekNumber;
+        if (taskW && taskW !== activeReportWeek && taskW !== activeReportWeek + 1) return false;
+      }
+      return true;
+    });
+  }, [unifiedTasks, personalWeekMode, activeReportWeek]);
+
+  const directiveTasksTotal = useMemo(() => {
+    return unifiedTasks.filter(t => {
+      if (t.source !== 'STANDALONE' && t.group !== 'Chỉ đạo') return false;
+      return isAssignedToCurrentUser(t);
+    });
+  }, [unifiedTasks, isAssignedToCurrentUser]);
+
+  const personalCount = personalTasksTotal.length;
+  const directiveCount = directiveTasksTotal.length;
 
   // Filter tasks based on Primary Main Tab (Personal vs Directive) & Search/Dropdown Filters
   const filteredTasks = useMemo(() => {
@@ -375,8 +433,21 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       // 0. Primary Main Tab Filter
       if (mainTab === 'PERSONAL') {
         if (task.source !== 'REPORT') return false;
+
+        // Filter personal tasks by "Tuần đó" vs "Tất cả"
+        if (personalWeekMode === 'CURRENT_WEEK') {
+          const taskW = task.weekNumber;
+          if (taskW && taskW !== activeReportWeek && taskW !== activeReportWeek + 1) {
+            return false;
+          }
+        }
       } else if (mainTab === 'DIRECTIVE') {
         if (task.source !== 'STANDALONE' && task.group !== 'Chỉ đạo') return false;
+
+        // For DIRECTIVE tasks: Only show tasks assigned to currently logged-in account (unless manager selected a specific employee)
+        if (selectedUserId === 'ALL') {
+          if (!isAssignedToCurrentUser(task)) return false;
+        }
       }
 
       // 1. Search Query Filter
@@ -435,7 +506,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
       return true;
     });
-  }, [unifiedTasks, mainTab, searchQuery, selectedDeptId, selectedUserId, statusFilter, groupFilter, weekFilter, activeTab, departments, accountsList]);
+  }, [unifiedTasks, mainTab, personalWeekMode, activeReportWeek, isAssignedToCurrentUser, searchQuery, selectedDeptId, selectedUserId, statusFilter, groupFilter, weekFilter, activeTab, departments, accountsList]);
 
   // Paginated Sliced Tasks based on pageSize (20, 50, 100) and currentPage
   const totalPages = Math.ceil(filteredTasks.length / pageSize) || 1;
@@ -1079,7 +1150,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       {/* 5. PRIMARY 2 MAIN TABS BANNER (KHO CÁ NHÂN vs CẤP TRÊN GIAO XUỐNG) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {/* Tab 1: Kho Nhiệm Vụ Cá Nhân */}
-        <button
+        <div
           onClick={() => setMainTab('PERSONAL')}
           className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden flex items-center justify-between group ${
             mainTab === 'PERSONAL'
@@ -1105,6 +1176,22 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <p className={`text-xs mt-1 ${mainTab === 'PERSONAL' ? 'text-blue-200/90' : 'text-slate-500 dark:text-slate-400'}`}>
                 Quản lý các sao nhiệm vụ tự import & kết quả tuần cá nhân (Có nút Sửa & Xóa)
               </p>
+
+              {/* Personal Task Week Selector */}
+              <div className="mt-2.5 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <span className="text-[11px] font-extrabold text-blue-300 dark:text-blue-400 flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-amber-400" />
+                  Hiển thị:
+                </span>
+                <select
+                  value={personalWeekMode}
+                  onChange={(e) => setPersonalWeekMode(e.target.value as 'CURRENT_WEEK' | 'ALL')}
+                  className="bg-slate-950/80 text-amber-300 text-xs font-black px-2.5 py-1 rounded-xl border border-amber-400/40 focus:outline-none focus:ring-2 focus:ring-amber-400 cursor-pointer shadow-sm"
+                >
+                  <option value="CURRENT_WEEK" className="bg-slate-900 text-amber-300">📌 Tuần đó (Tuần {currentWeek || 39})</option>
+                  <option value="ALL" className="bg-slate-900 text-white">🌐 Tất cả các tuần</option>
+                </select>
+              </div>
             </div>
           </div>
           <div className="text-right shrink-0 relative z-10 pl-2">
@@ -1113,10 +1200,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </span>
             <span className="block text-[10px] uppercase font-extrabold text-slate-400">Công việc</span>
           </div>
-        </button>
+        </div>
 
         {/* Tab 2: Nhiệm Vụ Được Cấp Trên Giao Xuống */}
-        <button
+        <div
           onClick={() => setMainTab('DIRECTIVE')}
           className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden flex items-center justify-between group ${
             mainTab === 'DIRECTIVE'
@@ -1142,6 +1229,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <p className={`text-xs mt-1 ${mainTab === 'DIRECTIVE' ? 'text-purple-200/90' : 'text-slate-500 dark:text-slate-400'}`}>
                 Nhiệm vụ phân công độc lập từ cấp trên (Chỉ xem chi tiết / Cập nhật tiến độ)
               </p>
+              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-purple-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Chỉ hiển thị công việc giao cho: <strong className="text-white underline">{currentUser?.full_name || 'Acc đăng nhập'}</strong>
+              </div>
             </div>
           </div>
           <div className="text-right shrink-0 relative z-10 pl-2">
@@ -1150,7 +1241,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </span>
             <span className="block text-[10px] uppercase font-extrabold text-slate-400">Công việc</span>
           </div>
-        </button>
+        </div>
       </div>
 
       {/* 6. TASK DATA TABLE WITH STATUS SUB-TABS & PAGE SIZE CONTROL */}
@@ -1210,8 +1301,28 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </button>
           </div>
 
-          {/* PAGE SIZE SELECTOR DROPDOWN (20, 50, 100) */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* PAGE SIZE & WEEK SELECTOR DROPDOWNS */}
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {mainTab === 'PERSONAL' ? (
+              <div className="flex items-center gap-2 bg-blue-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-blue-200 dark:border-slate-700 shadow-xs">
+                <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap">Kho cá nhân:</span>
+                <select
+                  value={personalWeekMode}
+                  onChange={(e) => setPersonalWeekMode(e.target.value as 'CURRENT_WEEK' | 'ALL')}
+                  className="bg-transparent text-xs font-black text-blue-700 dark:text-blue-300 focus:outline-none cursor-pointer border-none"
+                >
+                  <option value="CURRENT_WEEK" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">📌 Tuần đó (Tuần {currentWeek || 39})</option>
+                  <option value="ALL" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">🌐 Tất cả các tuần</option>
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-purple-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-purple-200 dark:border-slate-700 text-xs font-bold text-purple-800 dark:text-purple-300">
+                <ShieldAlert className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                <span>Giao cho: <strong className="font-black text-purple-950 dark:text-white">{currentUser?.full_name || 'Acc đăng nhập'}</strong></span>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
               <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Hiển thị:</span>
               <select

@@ -17,10 +17,17 @@ export async function getTasks(req, res) {
       LEFT JOIN accounts u_creator ON t.created_by = u_creator.id
       LEFT JOIN accounts u_assignee ON t.current_assignee_id = u_assignee.id
       LEFT JOIN accounts u_assigner ON t.current_assigner_id = u_assigner.id
-      ORDER BY t.created_at DESC
     `;
 
-    const tasks = db.prepare(query).all();
+    const params = [];
+    if (account_id) {
+      query += ` WHERE (t.current_assignee_id = ? OR t.assigned_assignees LIKE '%' || ? || '%' OR t.created_by = ? OR t.current_assigner_id = ?)`;
+      params.push(account_id, account_id, account_id, account_id);
+    }
+
+    query += ` ORDER BY t.created_at DESC`;
+
+    const tasks = db.prepare(query).all(...params);
     
     // Attach history & extensions
     const result = tasks.map(task => {

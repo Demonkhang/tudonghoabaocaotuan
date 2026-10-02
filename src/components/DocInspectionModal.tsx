@@ -6,6 +6,7 @@ export interface DocInspectionStatItem {
   department_name: string;
   total_checked: number;
   error_count: number;
+  total_pages?: number;
 }
 
 export interface ConsolidatedReportMetaItem {
@@ -49,7 +50,7 @@ export function DocInspectionModal({
 
   if (!isOpen) return null;
 
-  const handleStatChange = (index: number, field: 'total_checked' | 'error_count', val: number) => {
+  const handleStatChange = (index: number, field: 'total_checked' | 'error_count' | 'total_pages', val: number) => {
     const updated = [...localStats];
     updated[index] = { ...updated[index], [field]: Math.max(0, val) };
     setLocalStats(updated);
@@ -106,8 +107,9 @@ export function DocInspectionModal({
                   <tr>
                     <th className="py-2.5 px-3 w-12 text-center">STT</th>
                     <th className="py-2.5 px-3">Phòng ban</th>
-                    <th className="py-2.5 px-3 text-center w-36">Tổng số VB kiểm tra</th>
-                    <th className="py-2.5 px-3 text-center w-28">Số lỗi</th>
+                    <th className="py-2.5 px-3 text-center w-32">Tổng số VB kiểm tra</th>
+                    <th className="py-2.5 px-3 text-center w-24">Số lỗi</th>
+                    <th className="py-2.5 px-3 text-center w-28">Tổng số trang</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -131,6 +133,15 @@ export function DocInspectionModal({
                           value={item.error_count}
                           onChange={(e) => handleStatChange(idx, 'error_count', parseInt(e.target.value, 10) || 0)}
                           className={`w-16 bg-slate-900 border rounded px-2 py-1 text-center font-bold focus:outline-none ${item.error_count > 0 ? 'border-rose-500 text-rose-400' : 'border-slate-700 text-slate-300'}`}
+                        />
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          value={item.total_pages ?? 0}
+                          onChange={(e) => handleStatChange(idx, 'total_pages', parseInt(e.target.value, 10) || 0)}
+                          className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-center font-bold text-sky-400 focus:border-sky-500 focus:outline-none"
                         />
                       </td>
                     </tr>

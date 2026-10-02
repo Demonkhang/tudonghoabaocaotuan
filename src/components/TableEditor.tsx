@@ -763,12 +763,12 @@ export const TableEditor: React.FC<TableEditorProps> = ({
 
   // Danh sách 6 phòng ban mặc định cho Mục III Thể thức
   const defaultDeptStatsList: DocInspectionStatItem[] = [
-    { department_name: 'Văn phòng', total_checked: 1, error_count: 0 },
-    { department_name: 'Phòng Kế hoạch Tài chính', total_checked: 12, error_count: 0 },
-    { department_name: 'Phòng Quản lý Dự án', total_checked: 11, error_count: 4 },
-    { department_name: 'Phòng Giám sát Khu liên hợp', total_checked: 5, error_count: 1 },
-    { department_name: 'Phòng Giám sát Khối lượng', total_checked: 0, error_count: 0 },
-    { department_name: 'Phòng Kiểm tra Môi trường', total_checked: 11, error_count: 2 }
+    { department_name: 'Văn phòng', total_checked: 5, error_count: 0, total_pages: 8 },
+    { department_name: 'Phòng Kế hoạch Tài chính', total_checked: 20, error_count: 0, total_pages: 26 },
+    { department_name: 'Phòng Quản lý Dự án', total_checked: 9, error_count: 7, total_pages: 27 },
+    { department_name: 'Phòng Giám sát Khu liên hợp', total_checked: 2, error_count: 0, total_pages: 6 },
+    { department_name: 'Phòng Giám sát Khối lượng', total_checked: 2, error_count: 0, total_pages: 4 },
+    { department_name: 'Phòng Kiểm tra Môi trường', total_checked: 26, error_count: 7, total_pages: 39 }
   ];
 
   const activeStatsList = docInspectionStats && docInspectionStats.length > 0
@@ -1196,8 +1196,9 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                   <tr>
                     <th className="px-4 py-2.5 w-12 text-center">STT</th>
                     <th className="px-4 py-2.5">Tên Phòng ban</th>
-                    <th className="px-4 py-2.5 text-center w-44">Tổng số VB kiểm tra</th>
-                    <th className="px-4 py-2.5 text-center w-36">Số lỗi</th>
+                    <th className="px-4 py-2.5 text-center w-36">Tổng số VB kiểm tra</th>
+                    <th className="px-4 py-2.5 text-center w-28">Số lỗi</th>
+                    <th className="px-4 py-2.5 text-center w-36">Tổng số trang</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -1237,6 +1238,22 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                           className={`w-20 bg-white dark:bg-slate-800 border rounded px-2 py-1 text-center font-bold focus:ring-2 ${
                             item.error_count > 0 ? 'border-rose-400 text-rose-600 dark:text-rose-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                           }`}
+                        />
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          disabled={isReadOnly}
+                          value={item.total_pages ?? 0}
+                          onChange={(e) => {
+                            if (!setDocInspectionStats) return;
+                            const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                            const updated = [...activeStatsList];
+                            updated[idx] = { ...updated[idx], total_pages: val };
+                            setDocInspectionStats(updated);
+                          }}
+                          className="w-24 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-center font-bold text-sky-700 dark:text-sky-400 focus:ring-2 focus:ring-sky-500"
                         />
                       </td>
                     </tr>

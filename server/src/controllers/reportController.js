@@ -861,8 +861,9 @@ export async function carryOverNextWeek(req, res) {
 
       const newId = `co_tx_${t.id}_${Date.now()}`;
       const isStarred = t.is_starred !== undefined ? t.is_starred : 1;
-      // Nếu tuần cũ đã hoàn thành thì làm sạch trien_khai; nếu đang thực hiện thì giữ lại trien_khai tiến độ
-      const finalTrienKhai = (t.tien_do === 'Hoàn thành') ? '' : (t.trien_khai || '');
+      // Đem theo toàn bộ nội dung triển khai thực hiện và sản phẩm từ tuần cũ sang tuần mới
+      const finalTrienKhai = t.trien_khai || '';
+      const finalSanPham = t.san_pham || '';
 
       stmtInsertTask.run(
         newId,
@@ -871,9 +872,9 @@ export async function carryOverNextWeek(req, res) {
         'Thường xuyên',
         t.noi_dung,
         'Thường xuyên',
-        finalTrienKhai,
+        finalTrienKhai, // Đem nội dung triển khai thực hiện sang tuần mới
         'Đang thực hiện',
-        '', // Reset sản phẩm hoàn thành cũ
+        finalSanPham, // Đem sản phẩm sang tuần mới
         t.id,
         newOrderIndex++,
         1,
@@ -892,8 +893,8 @@ export async function carryOverNextWeek(req, res) {
 
       const newId = `co_uf_${t.id}_${Date.now()}`;
       const isStarred = t.is_starred !== undefined ? t.is_starred : 0;
-      // Bảo toàn nội dung tiến độ / triển khai dở dang của nhiệm vụ chưa hoàn thành
       const finalTrienKhai = t.trien_khai || '';
+      const finalSanPham = t.san_pham || '';
 
       stmtInsertTask.run(
         newId,
@@ -904,7 +905,7 @@ export async function carryOverNextWeek(req, res) {
         t.thoi_gian || 'Trong tuần',
         finalTrienKhai,
         'Đang thực hiện',
-        '', // Reset sản phẩm hoàn thành cũ
+        finalSanPham,
         t.id,
         newOrderIndex++,
         t.is_recurring || 0,
@@ -1295,16 +1296,16 @@ export async function getConsolidatedReportDetail(req, res) {
     let docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(masterReportId);
     if (!docStats || docStats.length === 0) {
       const defaultDepts = [
-        { name: 'Văn phòng', total: 1, err: 0 },
-        { name: 'Phòng Kế hoạch Tài chính', total: 12, err: 0 },
-        { name: 'Phòng Quản lý Dự án', total: 11, err: 4 },
-        { name: 'Phòng Giám sát Khu liên hợp', total: 5, err: 1 },
-        { name: 'Phòng Giám sát Khối lượng', total: 0, err: 0 },
-        { name: 'Phòng Kiểm tra Môi trường', total: 11, err: 2 }
+        { name: 'Văn phòng', total: 5, err: 0, pages: 8 },
+        { name: 'Phòng Kế hoạch Tài chính', total: 20, err: 0, pages: 26 },
+        { name: 'Phòng Quản lý Dự án', total: 9, err: 7, pages: 27 },
+        { name: 'Phòng Giám sát Khu liên hợp', total: 2, err: 0, pages: 6 },
+        { name: 'Phòng Giám sát Khối lượng', total: 2, err: 0, pages: 4 },
+        { name: 'Phòng Kiểm tra Môi trường', total: 26, err: 7, pages: 39 }
       ];
-      const stmt = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, order_index) VALUES (?, ?, ?, ?, ?, ?)');
+      const stmt = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, total_pages, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)');
       defaultDepts.forEach((d, i) => {
-        stmt.run(`ds_${masterReportId}_${i}`, masterReportId, d.name, d.total, d.err, i + 1);
+        stmt.run(`ds_${masterReportId}_${i}`, masterReportId, d.name, d.total, d.err, d.pages || 0, i + 1);
       });
       docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(masterReportId);
     }
@@ -1449,7 +1450,7 @@ export async function saveConsolidatedReport(req, res) {
       // 3. Upsert doc_inspection_stats
       if (Array.isArray(doc_inspection_stats)) {
         db.prepare('DELETE FROM doc_inspection_stats WHERE report_id = ?').run(masterReportId);
-        const stmtDs = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, order_index) VALUES (?, ?, ?, ?, ?, ?)');
+        const stmtDs = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, total_pages, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)');
         doc_inspection_stats.forEach((ds, idx) => {
           stmtDs.run(
             `ds_${masterReportId}_${idx}_${Date.now()}`,
@@ -1457,6 +1458,7 @@ export async function saveConsolidatedReport(req, res) {
             ds.department_name || '',
             parseInt(ds.total_checked || '0', 10),
             parseInt(ds.error_count || '0', 10),
+            parseInt(ds.total_pages || '0', 10),
             idx + 1
           );
         });
