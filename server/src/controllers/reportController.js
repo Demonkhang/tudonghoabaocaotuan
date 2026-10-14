@@ -410,16 +410,15 @@ export async function getReportHistory(req, res) {
         SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi, d.code as don_vi_code,
           CASE 
             WHEN r.account_id = ? THEN 'OWNER'
-            WHEN r.report_type = 'CONSOLIDATED_OFFICE' THEN 'EDIT'
             ELSE COALESCE(rs.permission, 'VIEW')
           END as user_permission
         FROM reports r
         JOIN accounts a ON r.account_id = a.id
         JOIN departments d ON r.department_id = d.id
         LEFT JOIN report_shares rs ON r.id = rs.report_id AND rs.shared_with_account_id = ?
-        WHERE r.department_id = ? OR r.account_id = ? OR rs.shared_with_account_id = ?
+        WHERE r.account_id = ? OR rs.shared_with_account_id = ?
         ORDER BY r.updated_at DESC, r.year DESC, r.week_number DESC
-      `).all(currentUserId, currentUserId, targetDeptId, currentUserId, currentUserId);
+      `).all(currentUserId, currentUserId, currentUserId, currentUserId);
     }
 
     // Tính toán số lượng task và tỷ lệ hoàn thành cho mỗi báo cáo
@@ -776,8 +775,8 @@ export async function carryOverNextWeek(req, res) {
       SELECT * FROM reports WHERE account_id = ? AND week_number = ? AND year = ?
     `).get(accId, currWeek, currYear);
 
-    const consolidatedMasterId = `rpt_consolidated_office_w${currWeek}_${currYear}`;
-    const consolidatedReport = db.prepare('SELECT * FROM reports WHERE id = ?').get(consolidatedMasterId);
+    const consolidatedMasterId = `rpt_consolidated_office_${accId}_w${currWeek}_${currYear}`;
+    const consolidatedReport = db.prepare('SELECT * FROM reports WHERE account_id = ? AND report_type = \'CONSOLIDATED_OFFICE\' AND week_number = ? AND year = ?').get(accId, currWeek, currYear);
 
     if (!currentReport && consolidatedReport) {
       currentReport = consolidatedReport;
@@ -792,7 +791,7 @@ export async function carryOverNextWeek(req, res) {
     }
 
     const isConsolidated = (currentReport && currentReport.report_type === 'CONSOLIDATED_OFFICE') || Boolean(consolidatedReport);
-    const activeReportId = isConsolidated ? consolidatedMasterId : currentReport.id;
+    const activeReportId = isConsolidated ? (consolidatedReport ? consolidatedReport.id : consolidatedMasterId) : currentReport.id;
 
     // 2. Lấy danh sách nhiệm vụ của tuần hiện tại (kèm team_code của từng tổ)
     let currentTasks = db.prepare(`
@@ -822,7 +821,7 @@ export async function carryOverNextWeek(req, res) {
 
     // 4. Khởi tạo Báo cáo target report cho account / consolidated master
     const targetReportId = isConsolidated
-      ? `rpt_consolidated_office_w${targetWeek}_${targetYear}`
+      ? `rpt_consolidated_office_${accId}_w${targetWeek}_${targetYear}`
       : `rpt_${accId}_w${targetWeek}_${targetYear}`;
 
     const existingTargetReport = db.prepare('SELECT id FROM reports WHERE id = ?').get(targetReportId);
@@ -1196,12 +1195,17 @@ export async function getCandidateTasks(req, res) {
         FROM tasks t
         JOIN reports r ON t.report_id = r.id
         WHERE (r.account_id = ? OR r.department_id = ?)
-          AND (t.tien_do IS NULL OR (
-            t.tien_do NOT LIKE '%hoàn thành%'
-            AND t.tien_do NOT LIKE '%hủy%'
-            AND t.tien_do NOT LIKE '%kết thúc%'
-            AND t.tien_do NOT LIKE '%dừng%'
-          ))
+          AND (
+            t.is_starred = 1
+            OR t.category = 'Thường xuyên'
+            OR t.tien_do IS NULL
+            OR (
+              t.tien_do NOT LIKE '%hủy%'
+              AND t.tien_do NOT LIKE '%kết thúc%'
+              AND t.tien_do NOT LIKE '%dừng%'
+              AND (t.tien_do NOT LIKE '%hoàn thành%' OR t.is_starred = 1 OR t.category = 'Thường xuyên')
+            )
+          )
           AND LENGTH(TRIM(t.noi_dung)) > 0
         ORDER BY r.year DESC, r.week_number DESC, t.order_index ASC
       `).all(currentUserId, department_id);
@@ -1211,12 +1215,17 @@ export async function getCandidateTasks(req, res) {
         FROM tasks t
         JOIN reports r ON t.report_id = r.id
         WHERE r.account_id = ?
-          AND (t.tien_do IS NULL OR (
-            t.tien_do NOT LIKE '%hoàn thành%'
-            AND t.tien_do NOT LIKE '%hủy%'
-            AND t.tien_do NOT LIKE '%kết thúc%'
-            AND t.tien_do NOT LIKE '%dừng%'
-          ))
+          AND (
+            t.is_starred = 1
+            OR t.category = 'Thường xuyên'
+            OR t.tien_do IS NULL
+            OR (
+              t.tien_do NOT LIKE '%hủy%'
+              AND t.tien_do NOT LIKE '%kết thúc%'
+              AND t.tien_do NOT LIKE '%dừng%'
+              AND (t.tien_do NOT LIKE '%hoàn thành%' OR t.is_starred = 1 OR t.category = 'Thường xuyên')
+            )
+          )
           AND LENGTH(TRIM(t.noi_dung)) > 0
         ORDER BY r.year DESC, r.week_number DESC, t.order_index ASC
       `).all(currentUserId);
@@ -1276,11 +1285,33 @@ export async function getConsolidatedReportDetail(req, res) {
     const { week, year, department_id, account_id } = req.query;
     const targetWeek = parseInt(week || '38', 10);
     const targetYear = parseInt(year || '2026', 10);
-    const masterReportId = `rpt_consolidated_office_w${targetWeek}_${targetYear}`;
-
-    // 1. Kiểm tra hoặc tạo Master Report
     const targetAccId = account_id || 'acc_vp_hoa';
-    let masterReport = db.prepare("SELECT * FROM reports WHERE id = ? OR (account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?)").get(masterReportId, targetAccId, targetWeek, targetYear);
+
+    // 1. Tìm Báo cáo tổng hợp của chính tài khoản này
+    let masterReport = db.prepare("SELECT * FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(targetAccId, targetWeek, targetYear);
+
+    // 2. Nếu không tìm thấy báo cáo riêng, kiểm tra xem có báo cáo tổng hợp nào được chia sẻ với tài khoản này không
+    if (!masterReport) {
+      masterReport = db.prepare(`
+        SELECT r.* FROM reports r
+        JOIN report_shares rs ON r.id = rs.report_id
+        WHERE rs.shared_with_account_id = ? AND r.report_type = 'CONSOLIDATED_OFFICE' AND r.week_number = ? AND r.year = ?
+        ORDER BY r.updated_at DESC
+      `).get(targetAccId, targetWeek, targetYear);
+    }
+
+    // 3. Nếu là ADMIN và chưa có báo cáo riêng/chia sẻ, kiểm tra báo cáo phòng ban
+    const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(targetAccId);
+    if (!masterReport && currentUser && currentUser.role === 'ADMIN') {
+      masterReport = db.prepare(`
+        SELECT r.* FROM reports r
+        WHERE r.department_id = ? AND r.report_type = 'CONSOLIDATED_OFFICE' AND r.week_number = ? AND r.year = ?
+        ORDER BY r.updated_at DESC
+      `).get(department_id || 'dept_vp', targetWeek, targetYear);
+    }
+
+    // 4. Nếu vẫn không có, tạo mới Báo cáo tổng hợp riêng cho targetAccId
+    const masterReportId = masterReport ? masterReport.id : `rpt_consolidated_office_${targetAccId}_w${targetWeek}_${targetYear}`;
 
     if (!masterReport) {
       db.prepare(`
@@ -1289,11 +1320,13 @@ export async function getConsolidatedReportDetail(req, res) {
         ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
           updated_at = CURRENT_TIMESTAMP
       `).run(masterReportId, department_id || 'dept_vp', targetAccId, targetWeek, targetYear);
-      masterReport = db.prepare("SELECT * FROM reports WHERE id = ? OR (account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?)").get(masterReportId, targetAccId, targetWeek, targetYear);
+      masterReport = db.prepare("SELECT * FROM reports WHERE id = ?").get(masterReportId);
     }
 
+    const activeReportId = masterReport.id;
+
     // 2. Lấy Mục III (doc_inspection_stats)
-    let docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(masterReportId);
+    let docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(activeReportId);
     if (!docStats || docStats.length === 0) {
       const defaultDepts = [
         { name: 'Văn phòng', total: 5, err: 0, pages: 8 },
@@ -1305,9 +1338,9 @@ export async function getConsolidatedReportDetail(req, res) {
       ];
       const stmt = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, total_pages, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)');
       defaultDepts.forEach((d, i) => {
-        stmt.run(`ds_${masterReportId}_${i}`, masterReportId, d.name, d.total, d.err, d.pages || 0, i + 1);
+        stmt.run(`ds_${activeReportId}_${i}`, activeReportId, d.name, d.total, d.err, d.pages || 0, i + 1);
       });
-      docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(masterReportId);
+      docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(activeReportId);
     }
 
     // 3. Lấy Mục IV & 4 Chữ ký (consolidated_report_meta)
@@ -1317,18 +1350,18 @@ export async function getConsolidatedReportDetail(req, res) {
     }
     const defaultNguoiLap = userAcc ? userAcc.full_name : '';
 
-    let meta = db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(masterReportId);
+    let meta = db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
     if (!meta) {
       db.prepare(`
         INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note)
         VALUES (?, ?, 'Trần Thuận Hòa', ?, 'Nguyễn Đức Thắng', 'Hoàng Văn Dương', ?)
       `).run(
-        `meta_${masterReportId}`,
-        masterReportId,
+        `meta_${activeReportId}`,
+        activeReportId,
         defaultNguoiLap,
         'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần ' + targetWeek + ' và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần ' + (targetWeek + 1) + ' của Bộ phận Văn thư – Lưu trữ và Chuyển đổi số. Kính trình Lãnh đạo phòng xem xét./.'
       );
-      meta = db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(masterReportId);
+      meta = db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
     } else if (!meta.nguoi_lap_name || meta.nguoi_lap_name.includes('Nguyễn Thị Mai')) {
       if (defaultNguoiLap) {
         meta.nguoi_lap_name = defaultNguoiLap;
@@ -1336,13 +1369,13 @@ export async function getConsolidatedReportDetail(req, res) {
       }
     }
 
-    // 4. Lấy toàn bộ Tasks (gồm cả task của master và sub-teams)
+    // 4. Lấy toàn bộ Tasks
     const tasks = db.prepare(`
       SELECT t.*, COALESCE(t.team_code, 'VAN_THU') as team_code
       FROM tasks t
       WHERE t.report_id = ? OR t.report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)
       ORDER BY t.table_type ASC, t.order_index ASC
-    `).all(masterReportId, masterReportId);
+    `).all(activeReportId, activeReportId);
 
     const table1 = tasks.filter(t => t.table_type === 1).map(t => ({
       id: t.id,
@@ -1407,15 +1440,19 @@ export async function saveConsolidatedReport(req, res) {
 
     const week = parseInt(metadata.tuan, 10);
     const year = parseInt(metadata.nam || '2026', 10);
-    const masterReportId = metadata.report_id || `rpt_consolidated_office_w${week}_${year}`;
+    const accId = metadata.account_id || req.query.account_id || 'acc_vp_hoa';
+
+    let existing = db.prepare("SELECT id FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(accId, week, year);
+    if (!existing && metadata.report_id) {
+      existing = db.prepare("SELECT id FROM reports WHERE id = ?").get(metadata.report_id);
+    }
+
+    const targetReportId = existing ? existing.id : (metadata.report_id && metadata.report_id.includes(accId) ? metadata.report_id : `rpt_consolidated_office_${accId}_w${week}_${year}`);
 
     db.exec('BEGIN IMMEDIATE;');
     try {
       // 1. Upsert master report
       const deptId = metadata.department_id || 'dept_vp';
-      const accId = metadata.account_id || 'acc_vp_hoa';
-      const existing = db.prepare("SELECT id FROM reports WHERE id = ? OR (account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?)").get(masterReportId, accId, week, year);
-      const targetReportId = existing ? existing.id : masterReportId;
 
       if (existing) {
         db.prepare('UPDATE reports SET kho_khan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
@@ -1432,13 +1469,13 @@ export async function saveConsolidatedReport(req, res) {
 
       // 2. Upsert consolidated meta
       if (consolidated_meta) {
-        db.prepare('DELETE FROM consolidated_report_meta WHERE report_id = ?').run(masterReportId);
+        db.prepare('DELETE FROM consolidated_report_meta WHERE report_id = ?').run(targetReportId);
         db.prepare(`
           INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
-          `meta_${masterReportId}`,
-          masterReportId,
+          `meta_${targetReportId}`,
+          targetReportId,
           consolidated_meta.to_truong_name || 'Trần Thuận Hòa',
           consolidated_meta.nguoi_lap_name || metadata?.nguoi_lap || '',
           consolidated_meta.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng',
@@ -1449,12 +1486,12 @@ export async function saveConsolidatedReport(req, res) {
 
       // 3. Upsert doc_inspection_stats
       if (Array.isArray(doc_inspection_stats)) {
-        db.prepare('DELETE FROM doc_inspection_stats WHERE report_id = ?').run(masterReportId);
+        db.prepare('DELETE FROM doc_inspection_stats WHERE report_id = ?').run(targetReportId);
         const stmtDs = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, total_pages, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)');
         doc_inspection_stats.forEach((ds, idx) => {
           stmtDs.run(
-            `ds_${masterReportId}_${idx}_${Date.now()}`,
-            masterReportId,
+            `ds_${targetReportId}_${idx}_${Date.now()}`,
+            targetReportId,
             ds.department_name || '',
             parseInt(ds.total_checked || '0', 10),
             parseInt(ds.error_count || '0', 10),
@@ -1465,17 +1502,17 @@ export async function saveConsolidatedReport(req, res) {
       }
 
       // 4. Upsert tasks (Clear existing tasks for this consolidated report and any linked sub-reports)
-      db.prepare('DELETE FROM tasks WHERE report_id = ? OR report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)').run(masterReportId, masterReportId);
+      db.prepare('DELETE FROM tasks WHERE report_id = ? OR report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)').run(targetReportId, targetReportId);
       const stmtTask = db.prepare(`
         INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, order_index, team_code, file_minh_chung, is_starred, is_recurring)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       (table1 || []).forEach((t, idx) => {
-        const taskId = (t.id && !t.id.startsWith('t1_init')) ? t.id : `t1_${masterReportId}_${idx}`;
+        const taskId = (t.id && !t.id.startsWith('t1_init')) ? t.id : `t1_${targetReportId}_${idx}`;
         stmtTask.run(
           taskId,
-          masterReportId,
+          targetReportId,
           1,
           t.nhom || 'Thường xuyên',
           t.noi_dung || '',
@@ -1492,10 +1529,10 @@ export async function saveConsolidatedReport(req, res) {
       });
 
       (table2 || []).forEach((t, idx) => {
-        const taskId = (t.id && !t.id.startsWith('t2_init')) ? t.id : `t2_${masterReportId}_${idx}`;
+        const taskId = (t.id && !t.id.startsWith('t2_init')) ? t.id : `t2_${targetReportId}_${idx}`;
         stmtTask.run(
           taskId,
-          masterReportId,
+          targetReportId,
           2,
           t.nhom || 'Thường xuyên',
           t.noi_dung || '',

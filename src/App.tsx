@@ -169,6 +169,7 @@ export default function App() {
   const [isCarryOverOpen, setIsCarryOverOpen] = useState<boolean>(false);
   const [isKanbanPlannerOpen, setIsKanbanPlannerOpen] = useState<boolean>(false);
   const [isStandaloneTaskKanbanOpen, setIsStandaloneTaskKanbanOpen] = useState<boolean>(false);
+  const [standaloneTaskInitialTab, setStandaloneTaskInitialTab] = useState<'personal' | 'management' | 'tree'>('management');
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
   const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
   const [isUserProfileOpen, setIsUserProfileOpen] = useState<boolean>(false);
@@ -283,19 +284,6 @@ export default function App() {
 
     autoLoadLatestReportOnStart();
   }, [currentUser?.id, currentUser?.department_id]);
-
-  // Tự động đồng bộ hai chiều giữa metadata.nguoi_lap và consolidatedMeta.nguoi_lap_name khi người dùng chỉnh sửa
-  useEffect(() => {
-    if (metadata.nguoi_lap !== undefined && metadata.nguoi_lap !== consolidatedMeta.nguoi_lap_name) {
-      setConsolidatedMeta(prev => ({ ...prev, nguoi_lap_name: metadata.nguoi_lap }));
-    }
-  }, [metadata.nguoi_lap]);
-
-  useEffect(() => {
-    if (consolidatedMeta.nguoi_lap_name !== undefined && consolidatedMeta.nguoi_lap_name !== metadata.nguoi_lap) {
-      setMetadata(prev => ({ ...prev, nguoi_lap: consolidatedMeta.nguoi_lap_name }));
-    }
-  }, [consolidatedMeta.nguoi_lap_name]);
 
   // Tải báo cáo khi người dùng chủ động chọn đổi Tuần / Năm trên dropdown sau khi đã khởi động xong
   useEffect(() => {
@@ -416,10 +404,10 @@ export default function App() {
         don_vi: currentUser?.department_name || prev.don_vi,
         nguoi_lap: currentUser?.full_name || prev.nguoi_lap
       }));
-      setTable1([]);
+      setTable1(fetchedTable1);
       setTable2([]);
-      setInitialSnapshot({ table1: [], table2: [] });
-      setHasLoadedData(false);
+      setInitialSnapshot({ table1: JSON.parse(JSON.stringify(fetchedTable1)), table2: [] });
+      setHasLoadedData(fetchedTable1.length > 0);
       setSyncedAt("Tuần mới (Chưa lưu)");
     }
   };
@@ -474,8 +462,17 @@ export default function App() {
     } catch (e) {
       console.error('Lỗi khi lưu currentUser vào localStorage:', e);
     }
+
+    // Xóa sạch dữ liệu nhiệm vụ của tài khoản cũ khỏi state React ngay lập tức
+    setTable1([]);
+    setTable2([]);
+    setInitialSnapshot({ table1: [], table2: [] });
+    setHasLoadedData(false);
+    setReportType('SINGLE');
+
     setMetadata(prev => ({
       ...prev,
+      report_id: `rpt_${user.id}_w${prev.tuan}_${prev.nam}`,
       don_vi: user.department_name,
       nguoi_lap: user.full_name
     }));
@@ -490,12 +487,19 @@ export default function App() {
   const handleLogout = () => {
     try {
       localStorage.removeItem('currentUser');
+      localStorage.removeItem('lastReportType');
     } catch (e) { }
     setCurrentUser(null);
+    setReportType('SINGLE');
+    setActiveMainTab('dashboard');
     setMetadata(prev => ({
       ...prev,
       don_vi: "Chưa chọn phòng ban",
       nguoi_lap: "Chưa đăng nhập"
+    }));
+    setConsolidatedMeta(prev => ({
+      ...prev,
+      nguoi_lap_name: "Chưa đăng nhập"
     }));
     setTable1([]);
     setTable2([]);
@@ -522,8 +526,7 @@ export default function App() {
     if (res && res.success && res.data) {
       const data = res.data;
       const rawNguoiLap = data.consolidated_meta?.nguoi_lap_name || data.metadata?.nguoi_lap;
-      const isOldDefault = !rawNguoiLap || rawNguoiLap.includes('Nguyễn Thị Mai') || rawNguoiLap === 'Chưa đăng nhập';
-      const finalNguoiLap = isOldDefault ? (currentUser?.full_name || metadata.nguoi_lap || '') : rawNguoiLap;
+      const finalNguoiLap = currentUser?.full_name || rawNguoiLap || metadata.nguoi_lap || '';
 
       setMetadata(prev => ({
         ...prev,
@@ -555,7 +558,7 @@ export default function App() {
         chanh_van_phong_name: metaObj.chanh_van_phong_name || 'Hoàng Văn Dương',
         ending_note: metaObj.ending_note || 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.'
       });
-      const rId = data.metadata?.report_id || `rpt_consolidated_office_w${week}_${year}`;
+      const rId = data.metadata?.report_id || (currentUser?.id ? `rpt_consolidated_office_${currentUser.id}_w${week}_${year}` : `rpt_consolidated_office_w${week}_${year}`);
       fetchReportSignaturesApi(rId).then(sigRes => {
         if (sigRes && sigRes.success) setReportSignatures(sigRes.signatures || []);
       });
@@ -788,7 +791,7 @@ export default function App() {
     const targetYear = metadata.nam;
     const isConsolidated = reportType === 'CONSOLIDATED_OFFICE';
     const targetReportId = isConsolidated
-      ? `rpt_consolidated_office_w${targetWeek}_${targetYear}`
+      ? (currentUser?.id ? `rpt_consolidated_office_${currentUser.id}_w${targetWeek}_${targetYear}` : `rpt_consolidated_office_w${targetWeek}_${targetYear}`)
       : `rpt_${currentUser.id}_w${targetWeek}_${targetYear}`;
 
     // Hàm xác định Bảng I hay Bảng II cho nhiệm vụ kế hoạch
@@ -849,7 +852,7 @@ export default function App() {
 
     // 1. Save current week report with updated completed/cancelled tasks
     if (isConsolidated) {
-      const currentReportId = metadata.report_id || `rpt_consolidated_office_w${metadata.tuan}_${metadata.nam}`;
+      const currentReportId = metadata.report_id || (currentUser?.id ? `rpt_consolidated_office_${currentUser.id}_w${metadata.tuan}_${metadata.nam}` : `rpt_consolidated_office_w${metadata.tuan}_${metadata.nam}`);
       await saveConsolidatedReportData({
         metadata: {
           ...metadata,
@@ -935,7 +938,7 @@ export default function App() {
     setIsLoading(true);
 
     if (reportType === 'CONSOLIDATED_OFFICE') {
-      const masterReportId = `rpt_consolidated_office_w${metadata.tuan}_${metadata.nam}`;
+      const masterReportId = metadata.report_id && currentUser?.id && metadata.report_id.includes(currentUser.id) ? metadata.report_id : (currentUser?.id ? `rpt_consolidated_office_${currentUser.id}_w${metadata.tuan}_${metadata.nam}` : `rpt_consolidated_office_w${metadata.tuan}_${metadata.nam}`);
       const res = await saveConsolidatedReportData({
         metadata: {
           ...metadata,
@@ -1071,8 +1074,14 @@ export default function App() {
         currentUser={currentUser}
         onOpenUserProfile={() => setIsUserProfileOpen(true)}
         onOpenSignatureSetup={() => setIsSignatureSetupOpen(true)}
+        onOpenTaskTree={() => {
+          setStandaloneTaskInitialTab('tree');
+          setIsStandaloneTaskKanbanOpen(true);
+        }}
         activeMainTab={activeMainTab}
         onSelectMainTab={setActiveMainTab}
+        onOpenLogin={() => setIsLoginOpen(true)}
+        onLogout={handleLogout}
         onSelectReport={(reportId) => {
           // If notification clicked, load that specific report
           fetchReportDetail('', 0, 0, reportId, currentUser?.id).then(res => {
@@ -1183,7 +1192,10 @@ export default function App() {
             onOpenHistory={() => setIsHistoryOpen(true)}
             onOpenCarryOver={() => setIsCarryOverOpen(true)}
             onOpenKanbanPlanner={() => setIsKanbanPlannerOpen(true)}
-            onOpenStandaloneTaskKanban={() => setIsStandaloneTaskKanbanOpen(true)}
+            onOpenStandaloneTaskKanban={() => {
+              setStandaloneTaskInitialTab('management');
+              setIsStandaloneTaskKanbanOpen(true);
+            }}
             onOpenAdmin={() => setIsAdminOpen(true)}
             onOpenShare={() => setIsShareOpen(true)}
             onSave={handleSaveReport}
@@ -1541,6 +1553,7 @@ export default function App() {
       {/* MODAL KHO NHIỆM VỤ CHUNG ĐỘC LẬP & GIAO VIỆC PHÂN CẤP */}
       <StandaloneTaskKanbanModal
         isOpen={isStandaloneTaskKanbanOpen}
+        initialTab={standaloneTaskInitialTab}
         onClose={() => {
           setIsStandaloneTaskKanbanOpen(false);
           // Refresh weekly report data in case tasks were assigned/completed

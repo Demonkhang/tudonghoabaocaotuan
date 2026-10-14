@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Layout,
   Sparkles,
@@ -28,7 +28,8 @@ import {
   Layers,
   BookmarkCheck,
   RefreshCw,
-  Crown
+  Crown,
+  Filter
 } from 'lucide-react';
 import { TaskTable1, TaskTable2 } from '../utils/reportUtils';
 import { UserProfile } from './LoginModal';
@@ -111,6 +112,7 @@ export function KanbanPlannerModal({
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [backlogSubTab, setBacklogSubTab] = useState<'ALL' | 'RECURRING' | 'ASSIGNED' | 'TRASH'>('ALL');
   const [starredSubMode, setStarredSubMode] = useState<'WEEKLY' | 'ALL'>('WEEKLY');
+  const [deduplicateStars, setDeduplicateStars] = useState<boolean>(true);
 
   // Proof Verification & Task Detail/Edit modals
   const [pendingProofTask, setPendingProofTask] = useState<KanbanTaskItem | null>(null);
@@ -347,18 +349,9 @@ export function KanbanPlannerModal({
           }
         }
 
-        const existingItem = initialBacklog.find(it => it.noi_dung.toLowerCase().trim() === key);
-        if (existingItem) {
-          if (!isUnstarred && item.is_starred) {
-            existingItem.is_starred = true;
-            existingItem.is_recurring = true;
-            existingItem.nhom = 'Thường xuyên';
-          }
-          return;
-        }
-
-        if (addedSet.has(key)) return;
-        addedSet.add(key);
+        // Tránh trùng lặp ID chính xác tuyệt đối
+        const isExactDuplicate = initialBacklog.some(it => it.id === item.id);
+        if (isExactDuplicate) return;
 
         initialBacklog.push(item);
       };
@@ -906,6 +899,12 @@ export function KanbanPlannerModal({
     );
   };
 
+  const rawWeeklyStarredList = useMemo(() => {
+    return columns.backlog.filter(isWeeklyStarredTask);
+  }, [columns.backlog, sourceWeek]);
+
+  const rawWeeklyStarredCount = rawWeeklyStarredList.length;
+
   // Filter items by search query & sub-tabs
   const filterItems = (items: KanbanTaskItem[], isBacklog = false) => {
     let filtered = items;
@@ -926,6 +925,17 @@ export function KanbanPlannerModal({
           filtered = filtered.filter(
             item => item.nhom === 'Thường xuyên' || item.is_recurring || item.is_starred
           );
+        }
+
+        // LỌC TRÙNG TÊN SAO (NẾU BẬT BỘ LỌC)
+        if (deduplicateStars) {
+          const seenKeys = new Set<string>();
+          filtered = filtered.filter(item => {
+            const k = item.noi_dung.toLowerCase().trim();
+            if (seenKeys.has(k)) return false;
+            seenKeys.add(k);
+            return true;
+          });
         }
       } else if (backlogSubTab === 'ASSIGNED') {
         filtered = filtered.filter(
@@ -968,11 +978,30 @@ export function KanbanPlannerModal({
     }
   };
 
-  const recurringBacklogCount = columns.backlog.filter(
-    item => item.nhom === 'Thường xuyên' || item.is_recurring || item.is_starred
-  ).length;
+  const recurringBacklogCount = useMemo(() => {
+    const list = columns.backlog.filter(
+      item => item.nhom === 'Thường xuyên' || item.is_recurring || item.is_starred
+    );
+    if (!deduplicateStars) return list.length;
+    const seen = new Set<string>();
+    return list.filter(item => {
+      const k = item.noi_dung.toLowerCase().trim();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    }).length;
+  }, [columns.backlog, deduplicateStars]);
 
-  const weeklyStarredBacklogCount = columns.backlog.filter(isWeeklyStarredTask).length;
+  const weeklyStarredBacklogCount = useMemo(() => {
+    if (!deduplicateStars) return rawWeeklyStarredCount;
+    const seen = new Set<string>();
+    return rawWeeklyStarredList.filter(item => {
+      const k = item.noi_dung.toLowerCase().trim();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    }).length;
+  }, [rawWeeklyStarredList, deduplicateStars, rawWeeklyStarredCount]);
 
   const assignedBacklogCount = columns.backlog.filter(
     item =>
@@ -1219,9 +1248,9 @@ export function KanbanPlannerModal({
               </div>
             }
           >
-            {/* Thanh chuyển đổi Chế độ Sao khi chọn Tab Nhiệm Vụ Sao */}
+            {/* Thanh chuyển đổi Chế độ Sao & Bộ Lọc Trùng Tên khi chọn Tab Nhiệm Vụ Sao */}
             {backlogSubTab === 'RECURRING' && (
-              <div className="mb-3 p-1.5 bg-slate-950/80 rounded-xl border border-amber-500/30 flex flex-col gap-1.5">
+              <div className="mb-3 p-2 bg-slate-950/90 rounded-xl border border-amber-500/40 flex flex-col gap-2 shadow-lg">
                 <div className="grid grid-cols-2 gap-1 text-[10px]">
                   <button
                     onClick={() => setStarredSubMode('WEEKLY')}
@@ -1247,17 +1276,43 @@ export function KanbanPlannerModal({
                   </button>
                 </div>
 
-                {starredSubMode === 'WEEKLY' && visibleBacklogItems.length > 0 && (
-                  <div className="pt-1.5 px-1 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[11px]">
-                    <span className="text-amber-300 font-extrabold truncate text-[10px]">
-                      ⭐ {visibleBacklogItems.length} nhiệm vụ sao Tuần {sourceWeek}
+                {/* BỘ LỌC TRÙNG TÊN SAO */}
+                <div className="pt-1.5 flex flex-wrap items-center justify-between border-t border-slate-800/80 gap-1.5">
+                  <div className="flex items-center gap-1 text-[10px] text-amber-300 font-bold truncate">
+                    <Sparkles className="w-3 h-3 text-amber-400 shrink-0 animate-pulse" />
+                    <span>
+                      ⭐ {visibleBacklogItems.length} sao {starredSubMode === 'WEEKLY' ? `Tuần ${sourceWeek}` : ''}
+                      {deduplicateStars && rawWeeklyStarredCount > weeklyStarredBacklogCount && (
+                        <span className="text-amber-400/80 font-normal ml-1">
+                          (Đã gộp {rawWeeklyStarredCount - weeklyStarredBacklogCount} trùng)
+                        </span>
+                      )}
                     </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setDeduplicateStars(prev => !prev)}
+                    className={`px-2 py-0.5 rounded-md font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer border shrink-0 ${
+                      deduplicateStars
+                        ? 'bg-amber-400/20 text-amber-300 border-amber-400/50 hover:bg-amber-400/30'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+                    }`}
+                    title={deduplicateStars ? "Nhấp để xem tất cả nhiệm vụ sao (bao gồm cả trùng tên)" : "Nhấp để bật lọc gộp nhiệm vụ sao trùng tên"}
+                  >
+                    <Filter className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span>{deduplicateStars ? '🔍 Đang lọc trùng tên' : '📋 Hiển thị tất cả trùng'}</span>
+                  </button>
+                </div>
+
+                {starredSubMode === 'WEEKLY' && visibleBacklogItems.length > 0 && (
+                  <div className="pt-1 border-t border-slate-800/60 flex items-center justify-end">
                     <button
                       onClick={() => {
                         const starredIds = visibleBacklogItems.map(i => i.id);
                         moveMultipleTasks(starredIds, 'nextWeek');
                       }}
-                      className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-md font-extrabold flex items-center gap-1 shrink-0 transition-all shadow text-[10px] cursor-pointer"
+                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-md font-extrabold flex items-center gap-1 shrink-0 transition-all shadow text-[10px] cursor-pointer"
                       title={`Chuyển tất cả ${visibleBacklogItems.length} nhiệm vụ sao tuần này sang Kế Hoạch Tuần Tới`}
                     >
                       <ArrowRight className="w-3 h-3" />

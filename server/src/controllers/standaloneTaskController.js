@@ -454,14 +454,25 @@ export async function publishPlan(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu ID người ban hành' });
     }
 
-    // Find all tasks that have staged assignees but are NOT dispatched yet (is_dispatched = 0)
+    // Find all tasks that have staged assignees with is_dispatched = 0 for this assigner (or admin)
     const tasks = db.prepare(`
       SELECT * FROM standalone_tasks 
-      WHERE is_dispatched = 0 AND assigned_assignees IS NOT NULL AND assigned_assignees != '[]'
+      WHERE assigned_assignees IS NOT NULL AND assigned_assignees != '[]'
     `).all();
 
-    if (tasks.length === 0) {
-      return res.status(400).json({ success: false, error: 'Chưa có nhiệm vụ nào được chọn giao người nhận để ban hành.' });
+    const eligibleTasks = tasks.filter(t => {
+      try {
+        const assignees = JSON.parse(t.assigned_assignees || '[]');
+        return assignees.some(a => 
+          (a.assigner_id === assigner_id || assigner_id === 'acc_admin') && (!a.is_dispatched || a.is_dispatched === 0)
+        );
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (eligibleTasks.length === 0) {
+      return res.status(400).json({ success: false, error: 'Chưa có nhiệm vụ nào được chọn giao người nhận mới để ban hành.' });
     }
 
     const assignerUser = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
@@ -469,7 +480,7 @@ export async function publishPlan(req, res) {
 
     let publishedCount = 0;
 
-    for (const t of tasks) {
+    for (const t of eligibleTasks) {
       let assignees = [];
       try {
         assignees = JSON.parse(t.assigned_assignees || '[]');
@@ -478,6 +489,16 @@ export async function publishPlan(req, res) {
       }
 
       if (assignees.length === 0) continue;
+
+      let newlyDispatchedAssignees = [];
+      for (const item of assignees) {
+        if ((item.assigner_id === assigner_id || assigner_id === 'acc_admin') && (!item.is_dispatched || item.is_dispatched === 0)) {
+          item.is_dispatched = 1;
+          newlyDispatchedAssignees.push(item);
+        }
+      }
+
+      if (newlyDispatchedAssignees.length === 0) continue;
 
       // Calculate Week & Year if due_date present
       let assignedWeek = t.assigned_week || null;
@@ -498,7 +519,7 @@ export async function publishPlan(req, res) {
         }
       }
 
-      const primaryAssignee = assignees[0];
+      const primaryAssignee = newlyDispatchedAssignees[0] || assignees[0];
       const targetLevels = Array.from(new Set(assignees.map(a => a.position_level))).join(',');
 
       // Update Task to DA_GIAO & is_dispatched = 1
@@ -507,16 +528,17 @@ export async function publishPlan(req, res) {
         SET current_assignee_id = ?,
             current_assigner_id = ?,
             target_position_level = ?,
+            assigned_assignees = ?,
             status = 'DA_GIAO',
             is_dispatched = 1,
             assigned_week = COALESCE(?, assigned_week),
             assigned_year = COALESCE(?, assigned_year),
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(primaryAssignee.account_id, assigner_id, targetLevels, assignedWeek, assignedYear, t.id);
+      `).run(primaryAssignee.account_id, assigner_id, targetLevels, JSON.stringify(assignees), assignedWeek, assignedYear, t.id);
 
-      // Record History & Notifications to all assignees
-      for (const item of assignees) {
+      // Record History & Notifications for newly dispatched assignees
+      for (const item of newlyDispatchedAssignees) {
         const historyId = 'hist_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
         db.prepare(`
           INSERT INTO task_assignment_history (
@@ -598,7 +620,8 @@ export async function stageAssignee(req, res) {
         assigner_id: assigner_id || null,
         assigner_name: assignerName,
         assigned_date: todayDate,
-        is_primary: assignees.length === 0
+        is_primary: assignees.length === 0,
+        is_dispatched: 0
       });
     }
 
@@ -609,6 +632,7 @@ export async function stageAssignee(req, res) {
       SET assigned_assignees = ?, 
           target_position_level = ?, 
           current_assigner_id = COALESCE(?, current_assigner_id),
+          is_dispatched = 0,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(JSON.stringify(assignees), targetLevels, assigner_id || null, task_id);
@@ -671,7 +695,8 @@ export async function bulkStageAssignee(req, res) {
             assigner_id: assigner_id || null,
             assigner_name: assignerName,
             assigned_date: todayDate,
-            is_primary: assignees.length === 0
+            is_primary: assignees.length === 0,
+            is_dispatched: 0
           });
         }
 
@@ -683,6 +708,7 @@ export async function bulkStageAssignee(req, res) {
               target_position_level = ?, 
               current_assigner_id = COALESCE(?, current_assigner_id),
               due_date = COALESCE(?, due_date),
+              is_dispatched = 0,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).run(JSON.stringify(assignees), targetLevels, assigner_id || null, due_date || null, taskId);
@@ -762,22 +788,30 @@ export async function unstageAssignee(req, res) {
     if (assignees.length > 0) {
       assignees[0].is_primary = true;
       targetLevels = Array.from(new Set(assignees.map(a => a.position_level))).join(',');
+      db.prepare(`
+        UPDATE standalone_tasks 
+        SET assigned_assignees = ?, 
+            target_position_level = ?,
+            current_assignee_id = ?,
+            status = ?,
+            is_dispatched = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(JSON.stringify(assignees), targetLevels, assignees[0].account_id, status, isDispatched, task_id);
     } else {
-      // 0 assignees left -> Return to global task pool!
-      targetLevels = '';
-      status = 'KHO_VIEC';
-      isDispatched = 0;
+      // 0 assignees left -> Return to global task pool & clear current assignee/assigner!
+      db.prepare(`
+        UPDATE standalone_tasks 
+        SET assigned_assignees = '[]', 
+            target_position_level = '',
+            current_assignee_id = NULL,
+            current_assigner_id = NULL,
+            status = 'KHO_VIEC',
+            is_dispatched = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(task_id);
     }
-
-    db.prepare(`
-      UPDATE standalone_tasks 
-      SET assigned_assignees = ?, 
-          target_position_level = ?,
-          status = ?,
-          is_dispatched = ?,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(JSON.stringify(assignees), targetLevels, status, isDispatched, task_id);
 
     res.json({ success: true, message: 'Đã rút người nhận khỏi nhiệm vụ', assignees });
   } catch (error) {

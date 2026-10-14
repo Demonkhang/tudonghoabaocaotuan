@@ -10,6 +10,7 @@ import { UserProfile } from './LoginModal';
 import { DepartmentItem, AdminAccount } from './AdminPanelModal';
 import { TaskTable1, TaskTable2 } from '../utils/reportUtils';
 import { fetchStandaloneTasks, fetchAdminAccounts, fetchReportHistory } from '../services/api';
+import { DocumentMetaBadges, decodeHtmlEntities, parseDocumentMeta } from './DocumentMetaBadges';
 
 export interface UnifiedTask {
   id: string;
@@ -285,8 +286,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           source: 'STANDALONE',
           title: st.title || 'Nhiệm vụ chỉ đạo',
           content: st.description || '',
-          assigneeName: st.assignee_full_name || st.creator_full_name || 'Chưa gán',
-          assigneeId: st.assignee_id || st.creator_id,
+          assigneeName: st.assignee_name || st.assignee_full_name || (st.current_assignee_id ? 'Đã gán' : 'Chưa gán'),
+          assigneeId: st.current_assignee_id || st.assignee_id || undefined,
           departmentName: st.department_name || 'Ban Quản Lý',
           departmentId: st.department_id,
           status: statusEnum,
@@ -369,13 +370,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       // 1. Direct assignee ID match
       if (task.assigneeId && task.assigneeId === currentUser.id) return true;
 
-      // 2. Original item fields check
+      // 2. Original item fields check (ONLY assignee fields)
       const orig = task.originalItem;
       if (orig) {
-        if (orig.current_assignee_id === currentUser.id) return true;
-        if (orig.assignee_id === currentUser.id) return true;
-        if (orig.created_by === currentUser.id) return true;
-        if (orig.current_assigner_id === currentUser.id) return true;
+        if (orig.current_assignee_id && orig.current_assignee_id === currentUser.id) return true;
+        if (orig.assignee_id && orig.assignee_id === currentUser.id) return true;
 
         if (orig.assigned_assignees) {
           if (typeof orig.assigned_assignees === 'string' && orig.assigned_assignees.includes(currentUser.id)) {
@@ -391,10 +390,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       }
 
       // 3. Assignee name matching currentUser full_name
-      if (currentUser.full_name && task.assigneeName) {
+      if (currentUser.full_name && task.assigneeName && task.assigneeName !== 'Chưa gán') {
         const nameA = task.assigneeName.toLowerCase().trim();
         const nameB = currentUser.full_name.toLowerCase().trim();
-        if (nameA === nameB || (nameA !== 'chưa gán' && (nameA.includes(nameB) || nameB.includes(nameA)))) {
+        if (nameA === nameB || nameA.includes(nameB) || nameB.includes(nameA)) {
           return true;
         }
       }
@@ -1375,18 +1374,20 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
                     >
                       {/* Task Title & Content */}
-                      <td className="py-3.5 px-3 max-w-md">
-                        <div className="font-bold text-slate-800 dark:text-slate-100 leading-snug flex items-center gap-1.5">
+                      <td className="py-3.5 px-3 max-w-xl">
+                        <div className="font-bold text-slate-800 dark:text-slate-100 leading-snug flex items-start gap-1.5">
                           {t.source === 'REPORT' && (
-                            <span className="text-amber-400 shrink-0" title="Nhiệm vụ báo cáo cá nhân / tự import">⭐</span>
+                            <span className="text-amber-400 shrink-0 mt-0.5" title="Nhiệm vụ báo cáo cá nhân / tự import">⭐</span>
                           )}
-                          <span>{t.title}</span>
+                          <span className="text-slate-900 dark:text-slate-100 font-extrabold">
+                            {decodeHtmlEntities(parseDocumentMeta(t.title).cleanText || t.title)}
+                          </span>
                         </div>
-                        {t.content && (
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5 font-medium">
-                            {t.content}
-                          </div>
-                        )}
+
+                        {/* Document Meta Badges & Clean Content */}
+                        <div className="mt-1.5">
+                          <DocumentMetaBadges content={`${t.title}\n${t.content || ''}`} />
+                        </div>
                       </td>
 
                       {/* Department & Assignee */}

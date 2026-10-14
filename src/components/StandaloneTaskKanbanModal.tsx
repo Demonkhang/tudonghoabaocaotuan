@@ -3,9 +3,10 @@ import {
   X, Plus, ShieldAlert, Clock, CheckCircle2, AlertCircle, Calendar,
   User, Send, CornerDownRight, FileText, ChevronRight, Sparkles, Filter,
   ArrowRight, Award, Upload, Check, MessageSquare, Trash2, Rocket, Eye,
-  Layers, ChevronDown, Sliders, Users, FileSpreadsheet, Search, CheckSquare, Square, Trash, UserCheck
+  Layers, ChevronDown, Sliders, Users, FileSpreadsheet, Search, CheckSquare, Square, Trash, UserCheck, GitFork
 } from 'lucide-react';
 import { ExcelImportModal } from './ExcelImportModal';
+import { TaskTreeViewer } from './TaskTreeViewer';
 import {
   fetchStandaloneTasks,
   fetchAccountsByPosition,
@@ -26,6 +27,7 @@ interface StandaloneTaskKanbanModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentAccount: any;
+  initialTab?: 'personal' | 'management' | 'tree';
 }
 
 export interface PositionDef {
@@ -49,7 +51,8 @@ export const ALL_POSITION_LEVELS: PositionDef[] = [
 export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps> = ({
   isOpen,
   onClose,
-  currentAccount
+  currentAccount,
+  initialTab
 }) => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -100,7 +103,7 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
   const [viewRoleTasksPosition, setViewRoleTasksPosition] = useState<PositionDef | null>(null);
 
   // Sub-tab Navigation state
-  const [activeTab, setActiveTab] = useState<'personal' | 'management'>('personal');
+  const [activeTab, setActiveTab] = useState<'personal' | 'management' | 'tree'>('personal');
   const [personalSearchQuery, setPersonalSearchQuery] = useState('');
 
   // Drag over states
@@ -117,21 +120,42 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
 
   const userRank = getCurrentUserRank();
 
+  // Helper parse metadata Văn bản đến từ description
+  const parseDocMetaFromDesc = (description?: string) => {
+    if (!description) return null;
+    const soDenMatch = description.match(/📌 \*\*Số đến:\*\* (.*)/);
+    const ngayDenMatch = description.match(/📅 \*\*Ngày đến:\*\* (.*)/);
+    const soKyHieuMatch = description.match(/📄 \*\*Số\/Ký hiệu VB:\*\* (.*)/);
+    const tacGiaMatch = description.match(/🏛️ \*\*Cơ quan\/Tác giả:\*\* (.*)/);
+    const loaiVbMatch = description.match(/📋 \*\*Loại văn bản:\*\* (.*)/);
+
+    if (!soDenMatch && !soKyHieuMatch && !tacGiaMatch) return null;
+
+    return {
+      soDen: soDenMatch ? soDenMatch[1].trim() : null,
+      ngayDen: ngayDenMatch ? ngayDenMatch[1].trim() : null,
+      soKyHieu: soKyHieuMatch ? soKyHieuMatch[1].trim() : null,
+      tacGia: tacGiaMatch ? tacGiaMatch[1].trim() : null,
+      loaiVb: loaiVbMatch ? loaiVbMatch[1].trim() : null,
+    };
+  };
+
   useEffect(() => {
     if (isOpen) {
       loadTasks();
-      // Default tab: if specialist (rank 6) -> personal, else -> management
-      if (userRank === 6) {
+      if (initialTab) {
+        setActiveTab(initialTab);
+      } else if (userRank === 6) {
         setActiveTab('personal');
       } else {
         setActiveTab('management');
       }
     }
-  }, [isOpen, currentAccount?.id, userRank]);
+  }, [isOpen, currentAccount?.id, userRank, initialTab]);
 
   const loadTasks = async () => {
     setLoading(true);
-    const res = await fetchStandaloneTasks(currentAccount?.id);
+    const res = await fetchStandaloneTasks();
     if (res.success) {
       setTasks(res.tasks || []);
     }
@@ -347,15 +371,16 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
 
   const getRoleTasks = (posKey: string) => {
     return tasks.filter(t => {
-      // Security/Scope check: Show task only if created by me, assigned by me, or if I am ADMIN
+      // Security/Scope check: Show task only if created by me, assigned by me, assigned to me, or if I am ADMIN
       const isMyManagementTask = currentAccount?.role === 'ADMIN' ||
         t.created_by === currentAccount?.id ||
-        t.current_assigner_id === currentAccount?.id;
+        t.current_assigner_id === currentAccount?.id ||
+        t.current_assignee_id === currentAccount?.id;
 
       let isAssignedByMeInStaging = false;
       try {
         const assignees = typeof t.assigned_assignees === 'string' ? JSON.parse(t.assigned_assignees || '[]') : (t.assigned_assignees || []);
-        isAssignedByMeInStaging = assignees.some((a: any) => a.assigner_id === currentAccount?.id);
+        isAssignedByMeInStaging = assignees.some((a: any) => a.assigner_id === currentAccount?.id || a.account_id === currentAccount?.id);
       } catch (e) {
         isAssignedByMeInStaging = false;
       }
@@ -517,24 +542,50 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
   if (!isOpen) return null;
 
   const unassignedTasks = tasks.filter(t => {
+    // 1. Hide if user clicked "Xác Nhận Giao - Ẩn Khỏi Kho" / "Dọn Dẹp Kho"
     if (t.is_pool_hidden) return false;
-    const isPoolTask = (!t.is_dispatched || t.status === 'KHO_VIEC' || !t.target_position_level);
-    if (!isPoolTask) return false;
+
+    // Check if task has staged assignees
+    let stagedAssignees: any[] = [];
+    try {
+      stagedAssignees = typeof t.assigned_assignees === 'string' 
+        ? JSON.parse(t.assigned_assignees || '[]') 
+        : (t.assigned_assignees || []);
+    } catch (e) {
+      stagedAssignees = [];
+    }
+
     if (currentAccount?.role === 'ADMIN') return true;
-    return t.created_by === currentAccount?.id || t.current_assigner_id === currentAccount?.id;
+
+    // 1. Task created by me or assigner is me
+    const isCreatedByMe = (t.created_by === currentAccount?.id || t.current_assigner_id === currentAccount?.id);
+
+    // 2. Task assigned/dispatched to me from a superior (e.g. Giám đốc -> Phó Giám đốc)
+    let isAssignedToMe = false;
+    if (currentAccount?.id) {
+      if (t.current_assignee_id === currentAccount.id) isAssignedToMe = true;
+      if (stagedAssignees.some((a: any) => a.account_id === currentAccount.id)) isAssignedToMe = true;
+    }
+
+    // 3. Unassigned pool task
+    const isUnassignedPool = (!t.target_position_level || t.status === 'KHO_VIEC' || stagedAssignees.length === 0);
+
+    return isCreatedByMe || isAssignedToMe || isUnassignedPool;
   });
 
   const pendingPublishTasks = tasks.filter(t => {
-    if (t.is_dispatched) return false;
-    if (!t.assigned_assignees || t.assigned_assignees === '[]' || t.assigned_assignees === '') return false;
-    if (currentAccount?.role === 'ADMIN') return true;
-    if (t.created_by === currentAccount?.id || t.current_assigner_id === currentAccount?.id) return true;
+    let assignees: any[] = [];
     try {
-      const assignees = typeof t.assigned_assignees === 'string' ? JSON.parse(t.assigned_assignees || '[]') : (t.assigned_assignees || []);
-      return assignees.some((a: any) => a.assigner_id === currentAccount?.id);
+      assignees = typeof t.assigned_assignees === 'string' ? JSON.parse(t.assigned_assignees || '[]') : (t.assigned_assignees || []);
     } catch (e) {
-      return false;
+      assignees = [];
     }
+    if (assignees.length === 0) return false;
+
+    if (currentAccount?.role === 'ADMIN') {
+      return assignees.some((a: any) => !a.is_dispatched || a.is_dispatched === 0);
+    }
+    return assignees.some((a: any) => (a.assigner_id === currentAccount?.id || a.account_id === currentAccount?.id) && (!a.is_dispatched || a.is_dispatched === 0));
   });
 
 
@@ -550,13 +601,19 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
 
   const personalTasks = tasks.filter(t => {
     if (!currentAccount?.id) return false;
-    if (t.current_assignee_id === currentAccount.id) return true;
+
+    // Must be officially dispatched (is_dispatched === 1) AND assigned to currentAccount
+    let isAssignedToMe = (t.current_assignee_id === currentAccount.id);
     try {
       const assignees = typeof t.assigned_assignees === 'string' ? JSON.parse(t.assigned_assignees || '[]') : (t.assigned_assignees || []);
-      return assignees.some((a: any) => a.account_id === currentAccount.id);
+      if (assignees.some((a: any) => a.account_id === currentAccount.id)) {
+        isAssignedToMe = true;
+      }
     } catch (e) {
-      return false;
+      // ignore
     }
+
+    return (t.is_dispatched === 1 || t.status === 'DA_GIAO') && isAssignedToMe;
   });
 
   const filteredPersonalTasks = personalTasks.filter(t => {
@@ -680,6 +737,19 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
                   {pendingPublishTasks.length} chờ ban hành
                 </span>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('tree')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'tree'
+                  ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 text-white shadow-lg shadow-purple-900/40 border border-cyan-500/50'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800'
+              }`}
+            >
+              <GitFork className="w-4 h-4 text-cyan-300" />
+              <span>🌳 Cây Nhiệm Vụ Phân Cấp (Từ Trên Xuống)</span>
             </button>
           </div>
 
@@ -821,6 +891,9 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
               </div>
             )}
           </div>
+        ) : activeTab === 'tree' ? (
+          /* TAB 3: CÂY NHIỆM VỤ PHÂN CẤP (TỪ TRÊN XUỐNG DƯỚI) */
+          <TaskTreeViewer tasks={tasks} currentAccount={currentAccount} />
         ) : (
           /* TAB 2: MANAGEMENT DASHBOARD (ĐIỀU HÀNH GIAO VIỆC) */
           visibleTargetPositions.length === 0 ? (
@@ -973,48 +1046,95 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
                             {task.title}
                           </h4>
 
-                          {/* MULTI-ASSIGNEE STAGING BADGE COUNTER */}
-                          {stagedAssignees.length > 0 && !task.is_dispatched && (
-                            <div className="mt-2 bg-indigo-950/80 border border-indigo-700/60 rounded-lg p-2 text-xs space-y-1">
+                          {/* INCOMING DOC METADATA BADGES */}
+                          {(() => {
+                            const meta = parseDocMetaFromDesc(task.description);
+                            if (!meta) return null;
+                            return (
+                              <div className="mb-2 p-1.5 bg-slate-950/90 border border-indigo-900/60 rounded-lg text-[11px] space-y-1">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {meta.soDen && (
+                                    <span className="bg-purple-950 text-purple-300 px-1.5 py-0.5 rounded border border-purple-800/60 font-mono font-bold text-[10px]">
+                                      📌 SỐ ĐẾN: {meta.soDen}
+                                    </span>
+                                  )}
+                                  {meta.soKyHieu && (
+                                    <span className="bg-cyan-950 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-800/60 text-[10px]">
+                                      📄 {meta.soKyHieu}
+                                    </span>
+                                  )}
+                                </div>
+                                {meta.tacGia && (
+                                  <div className="text-slate-400 text-[10px] truncate">
+                                    🏛️ Nơi gửi: <span className="text-slate-200 font-medium">{meta.tacGia}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* MULTI-ASSIGNEE STAGING CONTAINER IN KHO CHUNG */}
+                          {stagedAssignees.length > 0 && (
+                            <div className="mt-2 bg-indigo-950/80 border border-indigo-700/60 rounded-xl p-2.5 text-xs space-y-2">
                               <div className="flex items-center justify-between text-indigo-200 font-bold text-[11px]">
                                 <span className="flex items-center gap-1">
-                                  <Users className="w-3 h-3 text-indigo-400" />
-                                  Dự kiến giao: {stagedAssignees.length} người
+                                  <Users className="w-3.5 h-3.5 text-indigo-400" />
+                                  Đang giao cho ({stagedAssignees.length} người):
                                 </span>
-                                <span className="text-[9px] text-amber-400 animate-pulse font-medium">(Chưa phát hành)</span>
+                                <span className="text-[9px] text-amber-400 animate-pulse font-semibold font-mono">
+                                  {stagedAssignees.some(a => !a.is_dispatched) ? '(Chờ ban hành)' : '(Đã ban hành)'}
+                                </span>
                               </div>
+
                               <div className="space-y-1">
                                 {stagedAssignees.map((a: any) => {
                                   const posLabel = ALL_POSITION_LEVELS.find(p => p.key === a.position_level)?.label || a.position_level;
                                   return (
-                                    <div key={a.account_id} className="flex flex-col text-[11px] bg-indigo-900/50 px-2 py-1 rounded text-indigo-100">
+                                    <div key={a.account_id} className="flex flex-col text-[11px] bg-indigo-900/60 border border-indigo-800/50 p-1.5 rounded-lg text-indigo-100 space-y-0.5">
                                       <div className="flex items-center justify-between font-semibold">
-                                        <span className="truncate max-w-[170px]">• {a.full_name} ({posLabel})</span>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleUnstageAssignee(task.id, a.account_id);
-                                          }}
-                                          className="text-red-400 hover:text-red-200 font-bold ml-1 text-xs px-1 cursor-pointer"
-                                          title="Xóa / Rút người nhận này (nếu xóa hết sẽ tự về kho)"
-                                        >
-                                          ✕
-                                        </button>
+                                        <span className="truncate max-w-[170px]">• <strong>{a.full_name}</strong> ({posLabel})</span>
+                                        {!a.is_dispatched && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleUnstageAssignee(task.id, a.account_id);
+                                            }}
+                                            className="text-red-400 hover:text-red-200 font-bold ml-1 text-[10px] px-1 py-0.2 rounded hover:bg-red-950/60 transition-colors cursor-pointer"
+                                            title="Rút việc khỏi người nhận này"
+                                          >
+                                            ✕ Rút
+                                          </button>
+                                        )}
                                       </div>
-                                      <div className="text-[9px] text-indigo-300/80 flex items-center gap-2 mt-0.5">
-                                        <span>Giao bởi: <strong>{a.assigner_name || 'Lãnh đạo'}</strong></span>
-                                        {a.assigned_date && <span>• Ngày giao: {a.assigned_date}</span>}
-                                      </div>
+                                      {a.instruction_note && (
+                                        <div className="text-[10px] text-slate-300 italic truncate">
+                                          📝 {a.instruction_note}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
                               </div>
+
+                              {/* BUTTON TO CONFIRM & HIDE TASK FROM KHO CHUNG */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDismissPoolTask(task.id);
+                                }}
+                                className="w-full mt-1 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
+                                title="Xác nhận tạm giao xong & ẩn khỏi Kho Chung"
+                              >
+                                <Check className="w-4 h-4 text-emerald-100" />
+                                <span>✅ Xác Nhận Giao - Ẩn Khỏi Kho</span>
+                              </button>
                             </div>
                           )}
 
-                          {/* DISPATCHED / PUBLISHED TASK DISMISS BUTTON */}
-                          {task.is_dispatched === 1 && (
+                          {/* FALLBACK DISPATCHED TASK DISMISS BUTTON IF NO STAGED ASSIGNEES VISIBLE */}
+                          {stagedAssignees.length === 0 && task.is_dispatched === 1 && (
                             <div className="mt-2">
                               <button
                                 type="button"
@@ -1097,10 +1217,92 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
                           <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{pos.desc}</p>
                         </div>
 
+                        {/* Staged Tasks Container (Nhóm các nhiệm vụ giao cho cấp/nhân sự này) */}
+                        {assignedRoleTasks.length > 0 && (
+                          <div className="mt-3 p-2 bg-slate-950/80 border border-purple-500/40 rounded-xl space-y-2 max-h-48 overflow-y-auto shadow-inner">
+                            <div className="flex items-center justify-between text-[10px] font-bold text-purple-300 pb-1 border-b border-purple-900/40">
+                              <span className="flex items-center gap-1">
+                                <Layers className="w-3 h-3 text-purple-400" />
+                                Danh sách giao ({assignedRoleTasks.length})
+                              </span>
+                              <span className="text-[9px] text-amber-400 font-semibold">
+                                {pendingCount > 0 ? `${pendingCount} chờ ban hành` : 'Đã ban hành'}
+                              </span>
+                            </div>
+
+                            {assignedRoleTasks.map(t => {
+                              let assignees: any[] = [];
+                              try {
+                                assignees = typeof t.assigned_assignees === 'string'
+                                  ? JSON.parse(t.assigned_assignees || '[]')
+                                  : (t.assigned_assignees || []);
+                              } catch (e) {
+                                assignees = [];
+                              }
+                              const roleAssignees = assignees.filter((a: any) => a.position_level === pos.key);
+
+                              return (
+                                <div key={t.id} className="p-2 bg-slate-900/90 border border-slate-800 rounded-lg text-xs space-y-1.5 group/item hover:border-purple-500/50 transition-colors">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="text-[10px] font-mono font-bold text-purple-300 bg-purple-950 px-1.5 py-0.2 rounded border border-purple-800/40 truncate">
+                                      {t.task_code}
+                                    </span>
+                                    {(() => {
+                                      const hasPendingInRole = roleAssignees.some((a: any) => !a.is_dispatched || a.is_dispatched === 0);
+                                      return (
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded shrink-0 ${
+                                          !hasPendingInRole ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40' : 'bg-amber-950 text-amber-300 border border-amber-800/40'
+                                        }`}>
+                                          {!hasPendingInRole ? '✅ Đã ban hành' : '⏳ Chờ ban hành'}
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
+
+                                  <h5 className="font-semibold text-xs text-slate-100 line-clamp-1">
+                                    {t.title}
+                                  </h5>
+
+                                  {roleAssignees.length > 0 ? (
+                                    roleAssignees.map((a: any) => {
+                                      const isDispatchedItem = a.is_dispatched === 1;
+                                      return (
+                                        <div key={a.account_id} className="text-[10px] bg-indigo-950/70 border border-indigo-800/50 p-1.5 rounded flex items-center justify-between text-indigo-200 gap-1">
+                                          <div className="truncate">
+                                            <span>👤 Giao: <strong className="text-white">{a.full_name}</strong></span>
+                                            {a.instruction_note && <span className="text-slate-400 block truncate">📝 {a.instruction_note}</span>}
+                                          </div>
+                                          {!isDispatchedItem && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleUnstageAssignee(t.id, a.account_id);
+                                              }}
+                                              className="text-red-400 hover:text-red-200 font-bold text-[10px] px-1.5 py-0.5 rounded bg-red-950/60 hover:bg-red-900/80 transition-colors cursor-pointer shrink-0"
+                                              title="Rút việc khỏi người này (nhiệm vụ sẽ trả về Kho Chung)"
+                                            >
+                                              ✕ Rút
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="text-[10px] text-slate-400 italic">
+                                      Đang thuộc cấp {pos.label}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         {/* Interactive Drop Box inside Role Card */}
-                        <div className="mt-3 py-3 px-2 border-2 border-dashed border-slate-700/60 group-hover:border-purple-500/50 rounded-xl bg-slate-900/60 flex items-center justify-center text-center transition-colors">
+                        <div className="mt-3 py-2.5 px-2 border-2 border-dashed border-slate-700/60 group-hover:border-purple-500/50 rounded-xl bg-slate-900/60 flex items-center justify-center text-center transition-colors">
                           <span className="text-[11px] font-medium text-slate-400 group-hover:text-purple-300">
-                            📥 Thả thẻ vào đây để giao cho {pos.label}
+                            📥 Thả thẻ vào đây để giao thêm cho {pos.label}
                           </span>
                         </div>
 
@@ -1430,10 +1632,30 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Ghi Chú Chỉ Đạo Kèm Theo</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-300">Ghi Chú Bút Phê / Chỉ Đạo</label>
+                  <span className="text-[10px] text-indigo-400 font-medium">Chọn mẫu nhanh:</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    'Giao đơn vị chủ trì tham mưu xử lý',
+                    'Phối hợp thực hiện theo chức năng',
+                    'Báo cáo Lãnh đạo Ban kết quả trước hạn',
+                    'Lập hồ sơ theo dõi & báo cáo tuần'
+                  ].map((tpl, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setInstructionNote(tpl)}
+                      className="px-2 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/60 rounded-lg text-[10px] text-indigo-300 font-medium cursor-pointer transition-all"
+                    >
+                      ✍️ {tpl}
+                    </button>
+                  ))}
+                </div>
                 <textarea
                   rows={2}
-                  placeholder="Nhập yêu cầu chi tiết hoặc lưu ý cho người nhận..."
+                  placeholder="Nhập nội dung chỉ đạo hoặc bấm chọn mẫu nhanh ở trên..."
                   value={instructionNote}
                   onChange={(e) => setInstructionNote(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
