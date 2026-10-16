@@ -11,6 +11,7 @@ import {
   downloadIncomingDocExcelTemplate
 } from '../utils/excelParser';
 import { batchImportStandaloneTasksApi } from '../services/api';
+import { isUserVanThu } from './StandaloneTaskKanbanModal';
 
 interface ExcelImportModalProps {
   isOpen: boolean;
@@ -37,7 +38,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [autoSetDueDate, setAutoSetDueDate] = useState(true);
   const [structureErrorMsg, setStructureErrorMsg] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  if (!isOpen || !isUserVanThu(currentAccount)) return null;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];

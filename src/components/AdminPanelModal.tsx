@@ -7,8 +7,8 @@ export interface AdminAccount {
   id: string;
   username: string;
   full_name: string;
-  role: 'ADMIN' | 'LEADER' | 'STAFF';
-  position_level?: 'GIAM_DOC' | 'PHO_GIAM_DOC' | 'TRUONG_PHONG' | 'PHO_PHONG' | 'TO_TRUONG' | 'CHUYEN_VIEN' | string;
+  role: 'ADMIN' | 'LEADER' | 'STAFF' | 'VAN_THU';
+  position_level?: 'GIAM_DOC' | 'PHO_GIAM_DOC' | 'TRUONG_PHONG' | 'PHO_PHONG' | 'TO_TRUONG' | 'CHUYEN_VIEN' | 'VAN_THU' | string;
   department_id: string;
   department_name: string;
   department_code: string;
@@ -44,6 +44,7 @@ export const POSITION_LABELS: Record<string, { label: string; badge: string }> =
   PHO_PHONG: { label: '[4] Phó Phòng', badge: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
   TO_TRUONG: { label: '[5] Tổ Trưởng', badge: 'bg-amber-100 text-amber-900 border-amber-300' },
   CHUYEN_VIEN: { label: '[6] Chuyên Viên', badge: 'bg-rose-100 text-rose-900 border-rose-300' },
+  VAN_THU: { label: '[7] Văn Thư', badge: 'bg-teal-100 text-teal-900 border-teal-300' },
 };
 
 export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }: AdminPanelModalProps) {
@@ -59,7 +60,7 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
   const [newPassword, setNewPassword] = useState('123456');
   const [newFullName, setNewFullName] = useState('');
   const [newDeptId, setNewDeptId] = useState('');
-  const [newRole, setNewRole] = useState<'ADMIN' | 'LEADER' | 'STAFF'>('STAFF');
+  const [newRole, setNewRole] = useState<'ADMIN' | 'LEADER' | 'STAFF' | 'VAN_THU'>('STAFF');
   const [newPositionLevel, setNewPositionLevel] = useState<string>('CHUYEN_VIEN');
 
   // Form State - Department
@@ -553,6 +554,7 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
                       <option value="PHO_PHONG">[4] Phó Phòng (Deputy Head)</option>
                       <option value="TO_TRUONG">[5] Tổ Trưởng (Team Lead)</option>
                       <option value="CHUYEN_VIEN">[6] Chuyên Viên (Specialist)</option>
+                      <option value="VAN_THU">[7] Văn Thư (Clerk / Lưu trữ - Quyền Import)</option>
                     </select>
                   </div>
 
@@ -566,6 +568,7 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
                       <option value="STAFF">Nhân sự (STAFF)</option>
                       <option value="LEADER">Lãnh đạo (LEADER)</option>
                       <option value="ADMIN">Quản trị viên (ADMIN)</option>
+                      <option value="VAN_THU">Văn thư (VAN_THU - Có quyền Import dữ liệu)</option>
                     </select>
                   </div>
                 </div>
@@ -829,7 +832,8 @@ export function AdminPanelModal({ isOpen, onClose, departments, onRefreshData }:
                     { rank: 3, code: 'TRUONG_PHONG', name: 'Trưởng phòng (Dept Head)', desc: 'Giao việc cho Phó phòng & Tổ trưởng', color: 'border-cyan-500/60 bg-cyan-900/30 text-cyan-200' },
                     { rank: 4, code: 'PHO_PHONG', name: 'Phó phòng (Deputy Head)', desc: 'Giao việc cho Tổ trưởng & Chuyên viên', color: 'border-emerald-500/60 bg-emerald-900/30 text-emerald-200' },
                     { rank: 5, code: 'TO_TRUONG', name: 'Tổ trưởng (Team Lead)', desc: 'Giao việc trực tiếp cho Chuyên viên', color: 'border-amber-500/60 bg-amber-900/30 text-amber-200' },
-                    { rank: 6, code: 'CHUYEN_VIEN', name: 'Chuyên viên (Specialist)', desc: 'Thực hiện nhiệm vụ & Báo cáo hoàn thành', color: 'border-rose-500/60 bg-rose-900/30 text-rose-200' }
+                    { rank: 6, code: 'CHUYEN_VIEN', name: 'Chuyên viên (Specialist)', desc: 'Thực hiện nhiệm vụ & Báo cáo hoàn thành', color: 'border-rose-500/60 bg-rose-900/30 text-rose-200' },
+                    { rank: 7, code: 'VAN_THU', name: 'Văn thư (Clerk / Secretary)', desc: 'Tiếp nhận văn bản & Import dữ liệu Sổ văn bản đến', color: 'border-teal-500/60 bg-teal-900/30 text-teal-200' }
                   ].map((level) => {
                     const count = accounts.filter(a => (a.position_level || 'CHUYEN_VIEN') === level.code).length;
                     return (

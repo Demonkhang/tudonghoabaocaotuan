@@ -255,7 +255,8 @@ export const ApprovalChainModal: React.FC<ApprovalChainModalProps> = ({
                       : acc?.position_level === 'PHO_GIAM_DOC' ? 'Phó Giám đốc'
                       : acc?.position_level === 'TRUONG_PHONG' ? 'Trưởng phòng'
                       : acc?.position_level === 'PHO_PHONG' ? 'Phó phòng'
-                      : acc?.position_level === 'TO_TRUONG' ? 'Tổ trưởng' : 'Chuyên viên';
+                      : acc?.position_level === 'TO_TRUONG' ? 'Tổ trưởng'
+                      : acc?.position_level === 'VAN_THU' ? 'Văn thư' : 'Chuyên viên';
 
                     const isExtra = extraApproverIds.includes(id);
 

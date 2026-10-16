@@ -182,6 +182,19 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
               vertical-align: top !important;
               text-align: center !important;
             }
+
+            .signature-table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              border: none !important;
+              margin-top: 0.5rem !important;
+              margin-bottom: 1rem !important;
+            }
+            .signature-table tr,
+            .signature-table td {
+              border: none !important;
+              border-style: none !important;
+            }
             
             table {
               width: 100%;
@@ -788,37 +801,37 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
             {/* CHỮ KÝ HÀNH CHÍNH & NƠI NHẬN CHUẨN VĂN BẢN QUẢN LÝ NHÀ NƯỚC */}
             {isConsolidated ? (
               <div className="pt-2">
-                <table className="w-full border-collapse border border-black text-[12pt] mb-4">
-                  <tbody>
+                <table className="w-full border-collapse text-[12pt] mb-4 signature-table" style={{ width: '100%', border: 'none', borderCollapse: 'collapse', borderSpacing: 0 }}>
+                  <tbody style={{ border: 'none' }}>
                     {/* HÀNG 1: TỔ TRƯỞNG & NGƯỜI LẬP */}
-                    <tr>
-                      <td className="border border-black p-4 text-center align-top w-1/2" style={{ minHeight: '140px' }}>
-                        <div className="font-bold text-[12pt] mb-2">Ý kiến của Tổ trưởng</div>
-                        {renderSignatureStamp(consolidatedMeta?.to_truong_name || 'Trần Thuận Hòa') || <div className="h-20 my-1" />}
-                        <div className="font-bold text-[12pt] mt-2">{consolidatedMeta?.to_truong_name || 'Trần Thuận Hòa'}</div>
+                    <tr style={{ border: 'none' }}>
+                      <td className="p-4 text-center align-top w-1/2 border-none" style={{ width: '50%', border: 'none', minHeight: '140px' }}>
+                        <div className="font-bold uppercase text-[12pt] mb-3">Ý kiến của Tổ trưởng</div>
+                        {renderSignatureStamp(consolidatedMeta?.to_truong_name || 'Trần Thuận Hòa') || <div className="h-20 my-2" />}
+                        <div className="font-bold text-[12pt] mt-3">{consolidatedMeta?.to_truong_name || 'Trần Thuận Hòa'}</div>
                       </td>
-                      <td className="border border-black p-4 text-center align-top w-1/2" style={{ minHeight: '140px' }}>
-                        <div className="font-bold text-[12pt] mb-2">Người lập báo cáo</div>
-                        {renderSignatureStamp(consolidatedMeta?.nguoi_lap_name || metadata.nguoi_lap) || <div className="h-20 my-1" />}
-                        <div className="font-bold text-[12pt] mt-2">{consolidatedMeta?.nguoi_lap_name || metadata.nguoi_lap || ''}</div>
+                      <td className="p-4 text-center align-top w-1/2 border-none" style={{ width: '50%', border: 'none', minHeight: '140px' }}>
+                        <div className="font-bold uppercase text-[12pt] mb-3">Người lập báo cáo</div>
+                        {renderSignatureStamp(consolidatedMeta?.nguoi_lap_name || metadata.nguoi_lap) || <div className="h-20 my-2" />}
+                        <div className="font-bold text-[12pt] mt-3">{consolidatedMeta?.nguoi_lap_name || metadata.nguoi_lap || ''}</div>
                       </td>
                     </tr>
 
                     {/* HÀNG 2: PHÓ CHÁNH VĂN PHÒNG */}
-                    <tr>
-                      <td colSpan={2} className="border border-black p-4 text-center align-top" style={{ minHeight: '140px' }}>
-                        <div className="font-bold text-[12pt] mb-2">Ý kiến của Phó Chánh Văn phòng</div>
-                        {renderSignatureStamp(consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng') || <div className="h-20 my-1" />}
-                        <div className="font-bold text-[12pt] mt-2">{consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng'}</div>
+                    <tr style={{ border: 'none' }}>
+                      <td colSpan={2} className="p-4 text-center align-top border-none" style={{ width: '100%', border: 'none', minHeight: '140px' }}>
+                        <div className="font-bold uppercase text-[12pt] mb-3">Ý kiến của Phó Chánh Văn phòng</div>
+                        {renderSignatureStamp(consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng') || <div className="h-20 my-2" />}
+                        <div className="font-bold text-[12pt] mt-3">{consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng'}</div>
                       </td>
                     </tr>
 
                     {/* HÀNG 3: CHÁNH VĂN PHÒNG */}
-                    <tr>
-                      <td colSpan={2} className="border border-black p-4 text-center align-top" style={{ minHeight: '140px' }}>
-                        <div className="font-bold text-[12pt] mb-2">Ý kiến của Chánh Văn phòng</div>
-                        {renderSignatureStamp(consolidatedMeta?.chanh_van_phong_name || 'Hoàng Văn Dương') || <div className="h-20 my-1" />}
-                        <div className="font-bold text-[12pt] mt-2">{consolidatedMeta?.chanh_van_phong_name || 'Hoàng Văn Dương'}</div>
+                    <tr style={{ border: 'none' }}>
+                      <td colSpan={2} className="p-4 text-center align-top border-none" style={{ width: '100%', border: 'none', minHeight: '140px' }}>
+                        <div className="font-bold uppercase text-[12pt] mb-3">Ý kiến của Chánh Văn phòng</div>
+                        {renderSignatureStamp(consolidatedMeta?.chanh_van_phong_name || 'Hoàng Văn Dương') || <div className="h-20 my-2" />}
+                        <div className="font-bold text-[12pt] mt-3">{consolidatedMeta?.chanh_van_phong_name || 'Hoàng Văn Dương'}</div>
                       </td>
                     </tr>
                   </tbody>

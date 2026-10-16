@@ -63,7 +63,8 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
     : currentUser?.position_level === 'PHO_GIAM_DOC' ? 'Phó Giám đốc'
     : currentUser?.position_level === 'TRUONG_PHONG' ? 'Trưởng phòng'
     : currentUser?.position_level === 'PHO_PHONG' ? 'Phó phòng'
-    : currentUser?.position_level === 'TO_TRUONG' ? 'Tổ trưởng' : 'Chuyên viên';
+    : currentUser?.position_level === 'TO_TRUONG' ? 'Tổ trưởng'
+    : currentUser?.position_level === 'VAN_THU' ? 'Văn thư' : 'Chuyên viên';
 
   return (
     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">

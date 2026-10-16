@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Persistent data - DO NOT track or overwrite on server
+server/data/*.db*
+server/data/*.sqlite*
+uploads/*
+!uploads/.gitkeep
+backups/
+

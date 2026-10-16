@@ -270,12 +270,13 @@ export const TaskTreeViewer: React.FC<TaskTreeViewerProps> = ({
 
   // Map of positions for flow diagram placement
   const posMap: Record<string, PositionDef> = {
-    GIAM_DOC: ALL_POSITION_LEVELS[0],
-    PHO_GIAM_DOC: ALL_POSITION_LEVELS[1],
-    TRUONG_PHONG: ALL_POSITION_LEVELS[2],
-    PHO_PHONG: ALL_POSITION_LEVELS[3],
-    TO_TRUONG: ALL_POSITION_LEVELS[4],
-    CHUYEN_VIEN: ALL_POSITION_LEVELS[5],
+    GIAM_DOC: ALL_POSITION_LEVELS.find(p => p.key === 'GIAM_DOC') || ALL_POSITION_LEVELS[0],
+    PHO_GIAM_DOC: ALL_POSITION_LEVELS.find(p => p.key === 'PHO_GIAM_DOC') || ALL_POSITION_LEVELS[1],
+    TRUONG_PHONG: ALL_POSITION_LEVELS.find(p => p.key === 'TRUONG_PHONG') || ALL_POSITION_LEVELS[2],
+    PHO_PHONG: ALL_POSITION_LEVELS.find(p => p.key === 'PHO_PHONG') || ALL_POSITION_LEVELS[3],
+    TO_TRUONG: ALL_POSITION_LEVELS.find(p => p.key === 'TO_TRUONG') || ALL_POSITION_LEVELS[4],
+    CHUYEN_VIEN: ALL_POSITION_LEVELS.find(p => p.key === 'CHUYEN_VIEN') || ALL_POSITION_LEVELS[5],
+    VAN_THU: ALL_POSITION_LEVELS.find(p => p.key === 'VAN_THU') || ALL_POSITION_LEVELS[6],
   };
 
   const ALL_CONNECTIONS = [

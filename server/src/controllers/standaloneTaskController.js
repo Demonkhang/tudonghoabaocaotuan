@@ -846,6 +846,13 @@ export async function batchImportTasks(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu danh sách nhiệm vụ hoặc người tạo' });
     }
 
+    // Kiểm tra quyền: Chỉ vai trò Văn thư mới có quyền Import dữ liệu
+    const creator = db.prepare('SELECT id, role, position_level, username FROM accounts WHERE id = ?').get(created_by);
+    const isVanThu = creator && (creator.position_level === 'VAN_THU' || creator.role === 'VAN_THU' || creator.username === 'vanthu');
+    if (!isVanThu) {
+      return res.status(403).json({ success: false, error: 'Chỉ tài khoản có vai trò Văn thư mới có quyền import dữ liệu từ Excel' });
+    }
+
     let importedCount = 0;
     const currentYear = new Date().getFullYear();
 

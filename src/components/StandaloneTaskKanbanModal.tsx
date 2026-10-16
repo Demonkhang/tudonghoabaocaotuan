@@ -46,7 +46,15 @@ export const ALL_POSITION_LEVELS: PositionDef[] = [
   { key: 'PHO_PHONG', rank: 4, label: 'Phó Phòng', desc: 'Phụ trách chuyên môn kỹ thuật', badge: 'bg-emerald-900/80 text-emerald-200 border-emerald-700', color: 'border-emerald-500/50 bg-emerald-950/20 text-emerald-300' },
   { key: 'TO_TRUONG', rank: 5, label: 'Tổ Trưởng', desc: 'Đánh giá & Quản lý nhóm', badge: 'bg-amber-900/80 text-amber-200 border-amber-700', color: 'border-amber-500/50 bg-amber-950/20 text-amber-300' },
   { key: 'CHUYEN_VIEN', rank: 6, label: 'Chuyên Viên', desc: 'Thực hiện trực tiếp nhiệm vụ', badge: 'bg-rose-900/80 text-rose-200 border-rose-700', color: 'border-rose-500/50 bg-rose-950/20 text-rose-300' },
+  { key: 'VAN_THU', rank: 7, label: 'Văn Thư', desc: 'Tiếp nhận văn bản & Import dữ liệu đầu vào', badge: 'bg-teal-900/80 text-teal-200 border-teal-700', color: 'border-teal-500/50 bg-teal-950/20 text-teal-300' },
 ];
+
+export const isUserVanThu = (account: any): boolean => {
+  if (!account) return false;
+  return account.position_level === 'VAN_THU' ||
+         account.role === 'VAN_THU' ||
+         account.username === 'vanthu';
+};
 
 export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps> = ({
   isOpen,
@@ -110,11 +118,14 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
   const [dragOverZone, setDragOverZone] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
 
+  const isVanThu = isUserVanThu(currentAccount);
+
   // 1. Phân quyền lọc cấp bậc giao việc theo Thứ Cấp Tài Khoản Đăng Nhập
   const getCurrentUserRank = (): number => {
     const posKey = currentAccount?.position_level || 'CHUYEN_VIEN';
     const pos = ALL_POSITION_LEVELS.find(p => p.key === posKey);
     if (currentAccount?.role === 'ADMIN') return 0; // Admin sees all
+    if (isVanThu) return 0; // Văn thư có thể xem và điều phối văn bản đến cho các cấp (Giám đốc, Trưởng phòng...)
     return pos ? pos.rank : 6;
   };
 
@@ -164,7 +175,8 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
 
   // Determine positions that this user can assign tasks to (ranks > userRank STRICTLY - No same rank!)
   const visibleTargetPositions = ALL_POSITION_LEVELS.filter(p => {
-    if (userRank === 0) return true; // Admin sees all 6 levels
+    if (p.key === 'VAN_THU') return false; // Thụ lý nhiệm vụ là 6 cấp bậc chuẩn (Giám đốc -> Chuyên viên)
+    if (userRank === 0) return true; // Admin / Văn thư sees all 6 levels
     return p.rank > userRank; // Strictly smaller rank level (greater rank number)
   });
 
@@ -674,14 +686,17 @@ export const StandaloneTaskKanbanModal: React.FC<StandaloneTaskKanbanModalProps>
               </button>
             )}
 
-            <button
-              onClick={() => setIsExcelImportOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white rounded-xl font-medium text-xs transition-all shadow-md cursor-pointer border border-teal-500/30"
-              title="Nhập hàng loạt nhiệm vụ từ File Excel Sổ Văn Bản Đến"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-teal-100" />
-              <span>Import Excel</span>
-            </button>
+            {/* NÚT IMPORT EXCEL: CHỈ HIỂN THỊ DUY NHẤT VỚI ROLE VĂN THƯ */}
+            {isVanThu && (
+              <button
+                onClick={() => setIsExcelImportOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white rounded-xl font-medium text-xs transition-all shadow-md cursor-pointer border border-teal-500/30"
+                title="Nhập hàng loạt nhiệm vụ từ File Excel Sổ Văn Bản Đến (Dành riêng cho vai trò Văn thư)"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-teal-100" />
+                <span>Import Excel</span>
+              </button>
+            )}
 
             <button
               onClick={() => setIsCreateModalOpen(true)}

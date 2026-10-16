@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { ReportMetadata, toInputDate } from '../utils/reportUtils';
 import { UserProfile } from './LoginModal';
+import { isUserVanThu } from './StandaloneTaskKanbanModal';
 
 interface ToolbarProps {
   metadata: ReportMetadata;
@@ -501,14 +502,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
               {isDataMenuOpen && (
                 <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl py-2 z-50 text-slate-200 text-xs animate-in fade-in duration-150">
-                  <button
-                    onClick={() => { setIsDataMenuOpen(false); fileInputRef.current?.click(); }}
-                    disabled={isReadOnly}
-                    className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center gap-2 font-medium text-blue-300 disabled:opacity-40 cursor-pointer"
-                  >
-                    <Upload className="w-4 h-4 text-blue-400" />
-                    <span>Import Excel (.xlsx)</span>
-                  </button>
+                  {isUserVanThu(currentUser) && (
+                    <button
+                      onClick={() => { setIsDataMenuOpen(false); fileInputRef.current?.click(); }}
+                      disabled={isReadOnly}
+                      className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center gap-2 font-medium text-blue-300 disabled:opacity-40 cursor-pointer"
+                    >
+                      <Upload className="w-4 h-4 text-blue-400" />
+                      <span>Import Excel (.xlsx)</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => { setIsDataMenuOpen(false); onSync(); }}

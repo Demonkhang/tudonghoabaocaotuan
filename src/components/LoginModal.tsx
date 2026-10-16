@@ -5,7 +5,8 @@ export interface UserProfile {
   id: string;
   username: string;
   full_name: string;
-  role: 'ADMIN' | 'LEADER' | 'STAFF';
+  role: 'ADMIN' | 'LEADER' | 'STAFF' | 'VAN_THU';
+  position_level?: string;
   department_id: string;
   department_name: string;
   department_code: string;
@@ -127,9 +128,17 @@ export function LoginModal({ isOpen, onClose, onLoginSuccess, currentUser, onLog
                       ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
                       : currentUser.role === 'LEADER'
                       ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30'
+                      : (currentUser.role === 'VAN_THU' || currentUser.position_level === 'VAN_THU')
+                      ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/30'
                       : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30'
                   }`}>
-                    {currentUser.role === 'ADMIN' ? '👑 ADMIN QUẢN TRỊ' : currentUser.role === 'LEADER' ? '⭐ LEADER TỔ TRƯỞNG' : '👤 STAFF CHUYÊN VIÊN'}
+                    {currentUser.role === 'ADMIN'
+                      ? '👑 ADMIN QUẢN TRỊ'
+                      : currentUser.role === 'LEADER'
+                      ? '⭐ LEADER TỔ TRƯỞNG'
+                      : (currentUser.role === 'VAN_THU' || currentUser.position_level === 'VAN_THU')
+                      ? '📋 VĂN THƯ - LƯU TRỮ'
+                      : '👤 STAFF CHUYÊN VIÊN'}
                   </span>
                 </div>
 

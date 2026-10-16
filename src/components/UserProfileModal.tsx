@@ -7,7 +7,7 @@ export interface UserAccountInfo {
   id: string;
   username: string;
   full_name: string;
-  role: 'ADMIN' | 'LEADER' | 'STAFF';
+  role: 'ADMIN' | 'LEADER' | 'STAFF' | 'VAN_THU';
   position_level?: string;
   department_id: string;
   department_name?: string;

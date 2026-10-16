@@ -5,3 +5,6 @@ dist
 .gitignore
 scratch
 *.db
+server/data
+uploads
+
