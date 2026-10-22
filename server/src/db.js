@@ -1,546 +1,63 @@
-import { DatabaseSync } from 'node:sqlite';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { neon } from '@neondatabase/serverless';
+import dotenv from 'dotenv';
 
-const currentDir = typeof __dirname !== 'undefined'
-  ? __dirname
-  : (import.meta && import.meta.url ? path.dirname(fileURLToPath(import.meta.url)) : process.cwd());
+dotenv.config();
 
-const dbPath = process.env.DATABASE_PATH || path.join(currentDir, '../data/weekly_report.db');
-
-// Ensure data directory exists
-const dataDir = path.dirname(dbPath);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-const db = new DatabaseSync(dbPath);
-
-// Enable Foreign Keys & Write-Ahead Logging for high concurrency
-db.exec('PRAGMA foreign_keys = ON;');
-db.exec('PRAGMA journal_mode = WAL;');
-
-/**
- * Initialize Tables Schema & Initial Seeds
- */
-function initDatabase() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS departments (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      code TEXT NOT NULL UNIQUE,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS accounts (
-      id TEXT PRIMARY KEY,
-      department_id TEXT NOT NULL,
-      username TEXT NOT NULL UNIQUE,
-      password TEXT NOT NULL,
-      full_name TEXT NOT NULL,
-      role TEXT CHECK(role IN ('ADMIN', 'LEADER', 'STAFF', 'VAN_THU')) DEFAULT 'STAFF',
-      position_level TEXT CHECK(position_level IN ('GIAM_DOC', 'PHO_GIAM_DOC', 'TRUONG_PHONG', 'PHO_PHONG', 'TO_TRUONG', 'CHUYEN_VIEN', 'VAN_THU')) DEFAULT 'CHUYEN_VIEN',
-      parent_leader_id TEXT,
-      is_active INTEGER DEFAULT 1,
-      FOREIGN KEY (department_id) REFERENCES departments(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS reports (
-      id TEXT PRIMARY KEY,
-      department_id TEXT NOT NULL,
-      account_id TEXT NOT NULL,
-      week_number INTEGER NOT NULL,
-      year INTEGER NOT NULL,
-      status TEXT CHECK(status IN ('DRAFT', 'SUBMITTED', 'APPROVED')) DEFAULT 'DRAFT',
-      kho_khan TEXT DEFAULT 'Không',
-      report_type TEXT CHECK(report_type IN ('SINGLE', 'CONSOLIDATED_OFFICE')) DEFAULT 'SINGLE',
-      team_code TEXT CHECK(team_code IN ('NONE', 'CDS', 'VAN_THU', 'OFFICE_MASTER')) DEFAULT 'NONE',
-      parent_consolidated_id TEXT,
-      last_edited_by TEXT DEFAULT '',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (department_id) REFERENCES departments(id),
-      FOREIGN KEY (account_id) REFERENCES accounts(id),
-      UNIQUE(account_id, report_type, week_number, year)
-    );
-
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      report_id TEXT NOT NULL,
-      table_type INTEGER CHECK(table_type IN (1, 2)) NOT NULL,
-      category TEXT CHECK(category IN ('Thường xuyên', 'Đột xuất')) NOT NULL,
-      noi_dung TEXT NOT NULL,
-      thoi_gian TEXT DEFAULT '',
-      trien_khai TEXT DEFAULT '',
-      tien_do TEXT DEFAULT 'Hoàn thành',
-      san_pham TEXT DEFAULT '',
-      parent_task_id TEXT,
-      order_index INTEGER DEFAULT 0,
-      file_minh_chung TEXT DEFAULT '',
-      file_original_name TEXT DEFAULT '',
-      is_starred INTEGER DEFAULT 0,
-      is_recurring INTEGER DEFAULT 0,
-      FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS report_shares (
-      id TEXT PRIMARY KEY,
-      report_id TEXT NOT NULL,
-      shared_with_account_id TEXT NOT NULL,
-      permission TEXT CHECK(permission IN ('VIEW', 'EDIT')) DEFAULT 'VIEW',
-      shared_by_account_id TEXT NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(report_id, shared_with_account_id),
-      FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE,
-      FOREIGN KEY (shared_with_account_id) REFERENCES accounts(id) ON DELETE CASCADE,
-      FOREIGN KEY (shared_by_account_id) REFERENCES accounts(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS notifications (
-      id TEXT PRIMARY KEY,
-      recipient_account_id TEXT NOT NULL,
-      sender_account_id TEXT NOT NULL,
-      type TEXT DEFAULT 'REPORT_SHARED',
-      title TEXT NOT NULL,
-      message TEXT NOT NULL,
-      report_id TEXT,
-      is_read INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (recipient_account_id) REFERENCES accounts(id) ON DELETE CASCADE,
-      FOREIGN KEY (sender_account_id) REFERENCES accounts(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS standalone_tasks (
-      id TEXT PRIMARY KEY,
-      task_code TEXT UNIQUE NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT DEFAULT '',
-      created_by TEXT NOT NULL,
-      current_assignee_id TEXT,
-      current_assigner_id TEXT,
-      target_position_level TEXT,
-      priority TEXT CHECK(priority IN ('THUONG', 'KHAN', 'KHAN_CAP')) DEFAULT 'THUONG',
-      status TEXT CHECK(status IN (
-        'KHO_VIEC', 'DA_GIAO', 'DANG_THUC_HIEN', 'DE_XUAT_GIA_HAN', 'CHO_DUYET_HOAN_THANH', 'HOAN_THANH', 'HUY_BO'
-      )) DEFAULT 'KHO_VIEC',
-      due_date TEXT,
-      assigned_week INTEGER,
-      assigned_year INTEGER,
-      completion_proof TEXT DEFAULT '',
-      proof_file_url TEXT DEFAULT '',
-      assigned_assignees TEXT DEFAULT '[]',
-      is_dispatched INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (created_by) REFERENCES accounts(id),
-      FOREIGN KEY (current_assignee_id) REFERENCES accounts(id),
-      FOREIGN KEY (current_assigner_id) REFERENCES accounts(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS task_assignment_history (
-      id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
-      assigner_id TEXT NOT NULL,
-      assignee_id TEXT NOT NULL,
-      from_position_level TEXT,
-      to_position_level TEXT NOT NULL,
-      instruction_note TEXT DEFAULT '',
-      assigned_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (task_id) REFERENCES standalone_tasks(id) ON DELETE CASCADE,
-      FOREIGN KEY (assigner_id) REFERENCES accounts(id),
-      FOREIGN KEY (assignee_id) REFERENCES accounts(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS task_extensions (
-      id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
-      requester_id TEXT NOT NULL,
-      approver_id TEXT NOT NULL,
-      old_due_date TEXT NOT NULL,
-      requested_due_date TEXT NOT NULL,
-      reason TEXT NOT NULL,
-      status TEXT CHECK(status IN ('PENDING', 'APPROVED', 'REJECTED')) DEFAULT 'PENDING',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (task_id) REFERENCES standalone_tasks(id) ON DELETE CASCADE,
-      FOREIGN KEY (requester_id) REFERENCES accounts(id),
-      FOREIGN KEY (approver_id) REFERENCES accounts(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS custom_roles (
-      id TEXT PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      level_rank INTEGER NOT NULL,
-      description TEXT DEFAULT '',
-      scope_delegation TEXT DEFAULT '',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS doc_inspection_stats (
-      id TEXT PRIMARY KEY,
-      report_id TEXT NOT NULL,
-      department_name TEXT NOT NULL,
-      total_checked INTEGER DEFAULT 0,
-      error_count INTEGER DEFAULT 0,
-      total_pages INTEGER DEFAULT 0,
-      order_index INTEGER DEFAULT 0,
-      FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS consolidated_report_meta (
-      id TEXT PRIMARY KEY,
-      report_id TEXT NOT NULL UNIQUE,
-      to_truong_name TEXT DEFAULT 'Trần Thuận Hòa',
-      to_truong_opinion TEXT DEFAULT '',
-      nguoi_lap_name TEXT DEFAULT '',
-      pho_chanh_van_phong_name TEXT DEFAULT 'Nguyễn Đức Thắng',
-      pho_chanh_van_phong_opinion TEXT DEFAULT '',
-      chanh_van_phong_name TEXT DEFAULT 'Hoàng Văn Dương',
-      chanh_van_phong_opinion TEXT DEFAULT '',
-      FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
-    );
-
-  `);
-
-  migrateAccountsTable();
-  migrateReportsTable();
-  migrateTasksTable();
-  migrateStandaloneTasksTable();
-  migrateConsolidatedTables();
-  migrateDigitalSignatureTables();
-  migrateReportSharesTable();
-  seedDefaultData();
-}
-
-function migrateDigitalSignatureTables() {
-  try {
-    const accountCols = db.prepare("PRAGMA table_info(accounts)").all();
-    if (!accountCols.some(c => c.name === 'signature_url')) {
-      console.log('🔄 Đang thêm cột signature_url, pin_code_hash, signature_updated_at vào bảng accounts...');
-      db.exec("ALTER TABLE accounts ADD COLUMN signature_url TEXT DEFAULT '';");
-      db.exec("ALTER TABLE accounts ADD COLUMN pin_code_hash TEXT DEFAULT '';");
-      db.exec("ALTER TABLE accounts ADD COLUMN signature_updated_at TEXT DEFAULT '';");
+function convertSql(sqlStr) {
+  let paramIndex = 1;
+  let inString = false;
+  let res = '';
+  for (let i = 0; i < sqlStr.length; i++) {
+    const char = sqlStr[i];
+    if (char === "'") {
+      inString = !inString;
+      res += char;
+    } else if (char === '?' && !inString) {
+      res += `$${paramIndex++}`;
+    } else {
+      res += char;
     }
-
-    const reportCols = db.prepare("PRAGMA table_info(reports)").all();
-    if (!reportCols.some(c => c.name === 'approval_status')) {
-      console.log('🔄 Đang thêm cột approval_status, approvers_chain, current_approver_id vào bảng reports...');
-      db.exec("ALTER TABLE reports ADD COLUMN approval_status TEXT DEFAULT 'DRAFT';");
-      db.exec("ALTER TABLE reports ADD COLUMN approvers_chain TEXT DEFAULT '[]';");
-      db.exec("ALTER TABLE reports ADD COLUMN current_approver_id TEXT DEFAULT '';");
-    }
-
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS report_signatures (
-        id TEXT PRIMARY KEY,
-        report_id TEXT NOT NULL,
-        signer_account_id TEXT NOT NULL,
-        signer_name TEXT NOT NULL,
-        signer_position TEXT NOT NULL,
-        signer_department TEXT NOT NULL,
-        signature_url TEXT NOT NULL,
-        step_order INTEGER DEFAULT 1,
-        signed_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        note TEXT DEFAULT '',
-        FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE,
-        FOREIGN KEY (signer_account_id) REFERENCES accounts(id),
-        UNIQUE(report_id, signer_account_id)
-      );
-    `);
-    console.log('✅ Đã cập nhật CSDL cho Ký số thành công!');
-  } catch (err) {
-    console.error('Lỗi khi migrate Digital Signature tables:', err);
   }
+  return res;
 }
 
-function migrateReportSharesTable() {
-  try {
-    const tableInfo = db.prepare("PRAGMA table_info(report_shares)").all();
-    if (!tableInfo.some(c => c.name === 'shared_by_account_id')) {
-      console.log('🔄 Đang cập nhật bảng report_shares (thêm cột shared_by_account_id)...');
-      db.exec('PRAGMA foreign_keys = OFF;');
-      db.exec(`
-        CREATE TABLE report_shares_new (
-          id TEXT PRIMARY KEY,
-          report_id TEXT NOT NULL,
-          shared_with_account_id TEXT NOT NULL,
-          permission TEXT CHECK(permission IN ('VIEW', 'EDIT')) DEFAULT 'VIEW',
-          shared_by_account_id TEXT NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(report_id, shared_with_account_id),
-          FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE,
-          FOREIGN KEY (shared_with_account_id) REFERENCES accounts(id) ON DELETE CASCADE,
-          FOREIGN KEY (shared_by_account_id) REFERENCES accounts(id)
-        );
-      `);
-      if (tableInfo.some(c => c.name === 'owner_account_id')) {
-        db.exec(`
-          INSERT INTO report_shares_new (id, report_id, shared_with_account_id, permission, shared_by_account_id, created_at)
-          SELECT id, report_id, shared_with_account_id, permission, owner_account_id, created_at
-          FROM report_shares;
-        `);
+let sqlClient = null;
+
+function getClient() {
+  if (!sqlClient && process.env.DATABASE_URL) {
+    sqlClient = neon(process.env.DATABASE_URL);
+  }
+  if (!sqlClient) {
+    throw new Error('DATABASE_URL is not defined in environment variables');
+  }
+  return sqlClient;
+}
+
+export const db = {
+  prepare(query) {
+    const converted = convertSql(query);
+    return {
+      async all(...params) {
+        const client = getClient();
+        const flattened = params.flat();
+        return await client.query(converted, flattened);
+      },
+      async get(...params) {
+        const client = getClient();
+        const flattened = params.flat();
+        const rows = await client.query(converted, flattened);
+        return rows && rows.length > 0 ? rows[0] : null;
+      },
+      async run(...params) {
+        const client = getClient();
+        const flattened = params.flat();
+        const res = await client.query(converted, flattened);
+        return { changes: Array.isArray(res) ? res.length : 1 };
       }
-      db.exec('DROP TABLE report_shares;');
-      db.exec('ALTER TABLE report_shares_new RENAME TO report_shares;');
-      db.exec('PRAGMA foreign_keys = ON;');
-      console.log('✅ Đã cập nhật bảng report_shares thành công!');
-    }
-  } catch (err) {
-    console.error('Lỗi khi migrate report_shares table:', err);
+    };
+  },
+  async exec(query) {
+    const client = getClient();
+    return await client.query(query);
   }
-}
-
-function migrateAccountsTable() {
-  try {
-    const tableInfo = db.prepare("PRAGMA table_info(accounts)").all();
-    const hasPositionLevel = tableInfo.some(col => col.name === 'position_level');
-    if (!hasPositionLevel) {
-      console.log('🔄 Đang thêm cột position_level & parent_leader_id vào bảng accounts...');
-      db.exec("ALTER TABLE accounts ADD COLUMN position_level TEXT CHECK(position_level IN ('GIAM_DOC', 'PHO_GIAM_DOC', 'TRUONG_PHONG', 'PHO_PHONG', 'TO_TRUONG', 'CHUYEN_VIEN')) DEFAULT 'CHUYEN_VIEN';");
-      db.exec("ALTER TABLE accounts ADD COLUMN parent_leader_id TEXT;");
-      console.log('✅ Đã cập nhật bảng accounts thành công!');
-    }
-  } catch (err) {
-    console.error('Lỗi khi migrate accounts table:', err);
-  }
-}
-
-function migrateTasksTable() {
-  try {
-    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all();
-    const hasFileMinhChung = tableInfo.some(col => col.name === 'file_minh_chung');
-    if (!hasFileMinhChung) {
-      console.log('🔄 Đang thêm cột file_minh_chung & file_original_name vào bảng tasks...');
-      db.exec("ALTER TABLE tasks ADD COLUMN file_minh_chung TEXT DEFAULT '';");
-      db.exec("ALTER TABLE tasks ADD COLUMN file_original_name TEXT DEFAULT '';");
-      console.log('✅ Đã cập nhật bảng tasks thành công!');
-    }
-    const hasStarred = tableInfo.some(col => col.name === 'is_starred');
-    if (!hasStarred) {
-      console.log('🔄 Đang thêm cột is_starred & is_recurring vào bảng tasks...');
-      db.exec("ALTER TABLE tasks ADD COLUMN is_starred INTEGER DEFAULT 0;");
-      db.exec("ALTER TABLE tasks ADD COLUMN is_recurring INTEGER DEFAULT 0;");
-      console.log('✅ Đã thêm cột is_starred & is_recurring thành công!');
-    }
-  } catch (err) {
-    console.error('Lỗi khi migrate tasks table:', err);
-  }
-}
-
-function migrateStandaloneTasksTable() {
-  try {
-    const tableInfo = db.prepare("PRAGMA table_info(standalone_tasks)").all();
-    const hasAssignedAssignees = tableInfo.some(col => col.name === 'assigned_assignees');
-    if (!hasAssignedAssignees) {
-      console.log('🔄 Đang thêm cột assigned_assignees & is_dispatched vào bảng standalone_tasks...');
-      db.exec("ALTER TABLE standalone_tasks ADD COLUMN assigned_assignees TEXT DEFAULT '[]';");
-      db.exec("ALTER TABLE standalone_tasks ADD COLUMN is_dispatched INTEGER DEFAULT 0;");
-      console.log('✅ Đã cập nhật bảng standalone_tasks thành công!');
-    }
-    const hasPoolHidden = tableInfo.some(col => col.name === 'is_pool_hidden');
-    if (!hasPoolHidden) {
-      db.exec("ALTER TABLE standalone_tasks ADD COLUMN is_pool_hidden INTEGER DEFAULT 0;");
-    }
-  } catch (err) {
-    console.error('Lỗi khi migrate standalone_tasks table:', err);
-  }
-}
-
-function migrateConsolidatedTables() {
-  try {
-    const reportCols = db.prepare("PRAGMA table_info(reports)").all();
-    const hasReportType = reportCols.some(col => col.name === 'report_type');
-    if (!hasReportType) {
-      console.log('🔄 Đang thêm cột report_type, team_code, parent_consolidated_id vào bảng reports...');
-      db.exec("ALTER TABLE reports ADD COLUMN report_type TEXT CHECK(report_type IN ('SINGLE', 'CONSOLIDATED_OFFICE')) DEFAULT 'SINGLE';");
-      db.exec("ALTER TABLE reports ADD COLUMN team_code TEXT CHECK(team_code IN ('NONE', 'CDS', 'VAN_THU', 'OFFICE_MASTER')) DEFAULT 'NONE';");
-      db.exec("ALTER TABLE reports ADD COLUMN parent_consolidated_id TEXT;");
-      console.log('✅ Đã thêm cột hỗ trợ báo cáo tổng hợp!');
-    }
-
-    const taskCols = db.prepare("PRAGMA table_info(tasks)").all();
-    const hasTaskTeamCode = taskCols.some(col => col.name === 'team_code');
-    if (!hasTaskTeamCode) {
-      db.exec("ALTER TABLE tasks ADD COLUMN team_code TEXT DEFAULT '';");
-    }
-
-    const docStatCols = db.prepare("PRAGMA table_info(doc_inspection_stats)").all();
-    if (docStatCols.length > 0 && !docStatCols.some(c => c.name === 'total_pages')) {
-      console.log('🔄 Đang thêm cột total_pages vào bảng doc_inspection_stats...');
-      db.exec("ALTER TABLE doc_inspection_stats ADD COLUMN total_pages INTEGER DEFAULT 0;");
-    }
-  } catch (err) {
-    console.error('Lỗi khi migrate Consolidated Tables:', err);
-  }
-}
-
-/**
- * Migration: Chuyển đổi ràng buộc duy nhất từ (department_id, week_number, year) sang (account_id, week_number, year)
- * Đảm bảo mỗi tài khoản cá nhân có thể tạo báo cáo riêng độc lập trong cùng một phòng ban.
- */
-function migrateReportsTable() {
-  try {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='reports'").get();
-    if (tableInfo && tableInfo.sql && !tableInfo.sql.includes('account_id, report_type, week_number, year')) {
-      console.log('🔄 Đang nâng cấp CSDL: Chuyển sang UNIQUE(account_id, report_type, week_number, year)...');
-
-      db.exec('PRAGMA foreign_keys = OFF;');
-
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS reports_v3 (
-          id TEXT PRIMARY KEY,
-          department_id TEXT NOT NULL,
-          account_id TEXT NOT NULL,
-          week_number INTEGER NOT NULL,
-          year INTEGER NOT NULL,
-          status TEXT CHECK(status IN ('DRAFT', 'SUBMITTED', 'APPROVED')) DEFAULT 'DRAFT',
-          kho_khan TEXT DEFAULT 'Không',
-          report_type TEXT CHECK(report_type IN ('SINGLE', 'CONSOLIDATED_OFFICE')) DEFAULT 'SINGLE',
-          team_code TEXT CHECK(team_code IN ('NONE', 'CDS', 'VAN_THU', 'OFFICE_MASTER')) DEFAULT 'NONE',
-          parent_consolidated_id TEXT,
-          last_edited_by TEXT DEFAULT '',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (department_id) REFERENCES departments(id),
-          FOREIGN KEY (account_id) REFERENCES accounts(id),
-          UNIQUE(account_id, report_type, week_number, year)
-        );
-      `);
-
-      db.exec(`
-        INSERT OR IGNORE INTO reports_v3 (id, department_id, account_id, week_number, year, status, kho_khan, report_type, team_code, parent_consolidated_id, last_edited_by, created_at, updated_at)
-        SELECT id, department_id, account_id, week_number, year, status, kho_khan,
-               COALESCE(report_type, 'SINGLE'),
-               COALESCE(team_code, 'NONE'),
-               parent_consolidated_id,
-               COALESCE(last_edited_by, ''),
-               created_at, updated_at
-        FROM reports;
-      `);
-
-      db.exec('DROP TABLE reports;');
-      db.exec('ALTER TABLE reports_v3 RENAME TO reports;');
-
-      db.exec('PRAGMA foreign_keys = ON;');
-      console.log('✅ Nâng cấp CSDL reports sang UNIQUE(account_id, report_type, week_number, year) thành công!');
-    }
-
-    // Add last_edited_by column if missing
-    const cols = db.prepare("PRAGMA table_info(reports)").all();
-    if (!cols.some(c => c.name === 'last_edited_by')) {
-      db.exec("ALTER TABLE reports ADD COLUMN last_edited_by TEXT DEFAULT '';");
-    }
-  } catch (err) {
-    console.error('Lỗi khi migrate reports table:', err);
-    try { db.exec('PRAGMA foreign_keys = ON;'); } catch (e) {}
-  }
-}
-
-/**
- * Seed initial sample departments & accounts ONLY. No hardcoded sample reports/tasks!
- */
-function seedDefaultData() {
-  const deptCount = db.prepare('SELECT COUNT(*) as count FROM departments').get().count;
-  if (deptCount === 0) {
-    console.log('Seeding initial departments & accounts...');
-
-    // 1. Departments
-    db.prepare('INSERT INTO departments (id, name, code) VALUES (?, ?, ?)').run('dept_vp', 'Văn phòng Ban Quản lý', 'VP');
-    db.prepare('INSERT INTO departments (id, name, code) VALUES (?, ?, ?)').run('dept_pkh', 'Phòng Kế hoạch - Tài chính', 'PKH');
-    db.prepare('INSERT INTO departments (id, name, code) VALUES (?, ?, ?)').run('dept_pql', 'Phòng Quản lý Đô thị & Môi trường', 'PQL');
-  }
-
-  // Ensure accounts have hierarchy positions & custom roles
-  seedSampleHierarchyData();
-}
-
-function seedSampleHierarchyData() {
-  try {
-    // 0. Ensure accounts table schema supports VAN_THU
-    const accountsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'").get()?.sql || '';
-    if (!accountsSql.includes('VAN_THU')) {
-      db.exec('PRAGMA foreign_keys = OFF;');
-      db.exec(`
-        CREATE TABLE accounts_migrated (
-          id TEXT PRIMARY KEY,
-          department_id TEXT NOT NULL,
-          username TEXT NOT NULL UNIQUE,
-          password TEXT NOT NULL,
-          full_name TEXT NOT NULL,
-          role TEXT CHECK(role IN ('ADMIN', 'LEADER', 'STAFF', 'VAN_THU')) DEFAULT 'STAFF',
-          is_active INTEGER DEFAULT 1,
-          position_level TEXT CHECK(position_level IN ('GIAM_DOC', 'PHO_GIAM_DOC', 'TRUONG_PHONG', 'PHO_PHONG', 'TO_TRUONG', 'CHUYEN_VIEN', 'VAN_THU')) DEFAULT 'CHUYEN_VIEN',
-          parent_leader_id TEXT,
-          signature_url TEXT DEFAULT '',
-          pin_code_hash TEXT DEFAULT '',
-          signature_updated_at TEXT DEFAULT '',
-          FOREIGN KEY (department_id) REFERENCES departments(id)
-        );
-      `);
-      db.exec(`
-        INSERT INTO accounts_migrated (id, department_id, username, password, full_name, role, is_active, position_level, parent_leader_id, signature_url, pin_code_hash, signature_updated_at)
-        SELECT id, department_id, username, password, full_name, role, is_active, position_level, parent_leader_id, signature_url, pin_code_hash, signature_updated_at
-        FROM accounts;
-      `);
-      db.exec('DROP TABLE accounts;');
-      db.exec('ALTER TABLE accounts_migrated RENAME TO accounts;');
-      db.exec('PRAGMA foreign_keys = ON;');
-    }
-
-    // 1. Seed Custom Roles (6 Levels + Văn thư)
-    const roleCount = db.prepare('SELECT COUNT(*) as c FROM custom_roles').get().c;
-    if (roleCount === 0) {
-      const defaultRoles = [
-        { id: 'role_1', code: 'GIAM_DOC', name: 'Giám đốc', level_rank: 1, description: 'Lãnh đạo cao nhất Ban Quản lý', scope: 'Giao việc cho Phó Giám đốc, Trưởng phòng & tất cả các cấp' },
-        { id: 'role_2', code: 'PHO_GIAM_DOC', name: 'Phó Giám đốc', level_rank: 2, description: 'Lãnh đạo phụ trách khối/lĩnh vực', scope: 'Giao việc cho Trưởng phòng, Phó phòng & các cấp dưới' },
-        { id: 'role_3', code: 'TRUONG_PHONG', name: 'Trưởng phòng', level_rank: 3, description: 'Quản lý điều hành Phòng ban', scope: 'Giao việc cho Phó phòng, Tổ trưởng & Chuyên viên' },
-        { id: 'role_4', code: 'PHO_PHONG', name: 'Phó phòng', level_rank: 4, description: 'Phụ trách chuyên môn kỹ thuật', scope: 'Giao việc cho Tổ trưởng & Chuyên viên trong phòng' },
-        { id: 'role_5', code: 'TO_TRUONG', name: 'Tổ trưởng', level_rank: 5, description: 'Đánh giá & Quản lý nhóm chuyên môn', scope: 'Giao việc trực tiếp cho Chuyên viên' },
-        { id: 'role_6', code: 'CHUYEN_VIEN', name: 'Chuyên viên', level_rank: 6, description: 'Thực hiện trực tiếp nhiệm vụ & báo cáo', scope: 'Nhận việc từ các cấp trên & Báo cáo kết quả/Gia hạn' }
-      ];
-
-      for (const r of defaultRoles) {
-        db.prepare('INSERT INTO custom_roles (id, code, name, level_rank, description, scope_delegation) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(r.id, r.code, r.name, r.level_rank, r.description, r.scope);
-      }
-    }
-
-    // Ensure role_7 VAN_THU exists in custom_roles
-    const existingVanThuRole = db.prepare("SELECT id FROM custom_roles WHERE code = 'VAN_THU'").get();
-    if (!existingVanThuRole) {
-      db.prepare('INSERT INTO custom_roles (id, code, name, level_rank, description, scope_delegation) VALUES (?, ?, ?, ?, ?, ?)')
-        .run('role_7', 'VAN_THU', 'Văn thư', 7, 'Tiếp nhận văn bản & Quản lý sổ văn bản đến', 'Nhập dữ liệu văn bản đến vào Kho nhiệm vụ & Điều phối văn bản');
-    }
-
-    // 2. Seed / Update Hierarchy Accounts (Giám Đốc, Phó GĐ, Trưởng Phòng, Phó Phòng, Tổ Trưởng, Chuyên Viên, Văn Thư)
-    const hierarchyUsers = [
-      { id: 'acc_gd_minh', username: 'giamdoc', full_name: '[1] Giám đốc - Nguyễn Văn Minh', role: 'ADMIN', position_level: 'GIAM_DOC' },
-      { id: 'acc_pgd_nam', username: 'phogiamdoc', full_name: '[2] Phó Giám đốc - Trần Văn Nam', role: 'LEADER', position_level: 'PHO_GIAM_DOC' },
-      { id: 'acc_tp_hoa', username: 'vanphong', full_name: '[3] Trưởng phòng - Trần Thuận Hóa', role: 'LEADER', position_level: 'TRUONG_PHONG' },
-      { id: 'acc_tp_hoa2', username: 'truongphong', full_name: '[3] Trưởng phòng - Nguyễn Thị Lan', role: 'LEADER', position_level: 'TRUONG_PHONG' },
-      { id: 'acc_pp_mai', username: 'phophong', full_name: '[4] Phó phòng - Lê Thị Mai', role: 'LEADER', position_level: 'PHO_PHONG' },
-      { id: 'acc_tt_binh', username: 'totruong', full_name: '[5] Tổ trưởng - Phạm Văn Bình', role: 'STAFF', position_level: 'TO_TRUONG' },
-      { id: 'acc_cv_khang', username: 'khang', full_name: '[6] Chuyên viên - Đoàn Anh Khang', role: 'STAFF', position_level: 'CHUYEN_VIEN' },
-      { id: 'acc_cv_tuan', username: 'chuyenvien', full_name: '[6] Chuyên viên - Võ Văn Tuấn', role: 'STAFF', position_level: 'CHUYEN_VIEN' },
-      { id: 'acc_vt_bich', username: 'vanthu', full_name: '[7] Văn thư - Trần Thị Bích', role: 'VAN_THU', position_level: 'VAN_THU' }
-    ];
-
-    for (const u of hierarchyUsers) {
-      const existing = db.prepare("SELECT id FROM accounts WHERE username = ?").get(u.username);
-      if (!existing) {
-        db.prepare('INSERT INTO accounts (id, department_id, username, password, full_name, role, position_level) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .run(u.id, 'dept_vp', u.username, '123456', u.full_name, u.role, u.position_level);
-      } else {
-        db.prepare("UPDATE accounts SET full_name = ?, position_level = ?, role = ? WHERE username = ?")
-          .run(u.full_name, u.position_level, u.role, u.username);
-      }
-    }
-  } catch (err) {
-    console.error('Lỗi khi seed hierarchy users:', err);
-  }
-}
-
-initDatabase();
-
-export { db };
+};

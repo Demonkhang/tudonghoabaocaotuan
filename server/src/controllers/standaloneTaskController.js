@@ -27,11 +27,11 @@ export async function getTasks(req, res) {
 
     query += ` ORDER BY t.created_at DESC`;
 
-    const tasks = db.prepare(query).all(...params);
+    const tasks = await db.prepare(query).all(...params);
     
     // Attach history & extensions
-    const result = tasks.map(task => {
-      const history = db.prepare(`
+    const result = await Promise.all(tasks.map(async task => {
+      const history = await db.prepare(`
         SELECT h.*, 
                u_from.full_name as assigner_name, 
                u_to.full_name as assignee_name
@@ -42,7 +42,7 @@ export async function getTasks(req, res) {
         ORDER BY h.assigned_at ASC
       `).all(task.id);
 
-      const extensions = db.prepare(`
+      const extensions = await db.prepare(`
         SELECT e.*, u.full_name as requester_name
         FROM task_extensions e
         LEFT JOIN accounts u ON e.requester_id = u.id
@@ -55,7 +55,7 @@ export async function getTasks(req, res) {
         history,
         extensions
       };
-    });
+    }));
 
     res.json({ success: true, tasks: result });
   } catch (error) {
@@ -72,13 +72,13 @@ export async function getAccountsByPosition(req, res) {
     const { position_level } = req.query;
     let accounts;
     if (position_level) {
-      accounts = db.prepare(`
+      accounts = await db.prepare(`
         SELECT id, username, full_name, role, position_level, department_id 
         FROM accounts 
         WHERE position_level = ? AND is_active = 1
       `).all(position_level);
     } else {
-      accounts = db.prepare(`
+      accounts = await db.prepare(`
         SELECT id, username, full_name, role, position_level, department_id 
         FROM accounts 
         WHERE is_active = 1
@@ -102,7 +102,7 @@ export async function createTask(req, res) {
     }
 
     const taskId = 'task_st_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-    const count = db.prepare('SELECT COUNT(*) as c FROM standalone_tasks').get().c + 1;
+    const count = await db.prepare('SELECT COUNT(*) as c FROM standalone_tasks').get().c + 1;
     const taskCode = `NV-${new Date().getFullYear()}-${String(count).padStart(3, '0')}`;
 
     const stmt = db.prepare(`
@@ -111,7 +111,7 @@ export async function createTask(req, res) {
       ) VALUES (?, ?, ?, ?, ?, ?, 'KHO_VIEC', ?)
     `);
 
-    stmt.run(taskId, taskCode, title, description || '', created_by, priority || 'THUONG', due_date || null);
+    await stmt.run(taskId, taskCode, title, description || '', created_by, priority || 'THUONG', due_date || null);
 
     res.json({ success: true, task_id: taskId, task_code: taskCode });
   } catch (error) {
@@ -152,13 +152,13 @@ export async function assignTask(req, res) {
     }
 
     // Get old position/assignee if any
-    const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
+    const task = await db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
     if (!task) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy nhiệm vụ' });
     }
 
     // Update Task
-    db.prepare(`
+    await db.prepare(`
       UPDATE standalone_tasks 
       SET current_assignee_id = ?,
           current_assigner_id = ?,
@@ -173,7 +173,7 @@ export async function assignTask(req, res) {
 
     // Record History
     const historyId = 'hist_' + Date.now();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO task_assignment_history (
         id, task_id, assigner_id, assignee_id, from_position_level, to_position_level, instruction_note
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -181,9 +181,9 @@ export async function assignTask(req, res) {
 
     // Send Notification to Assignee
     const notifId = 'notif_' + Date.now();
-    const assignerUser = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
+    const assignerUser = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
     const assignerName = assignerUser ? assignerUser.full_name : 'Cấp trên';
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message)
       VALUES (?, ?, ?, 'TASK_ASSIGNED', ?, ?)
     `).run(
@@ -211,27 +211,27 @@ export async function requestExtension(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin đề xuất gia hạn' });
     }
 
-    const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
+    const task = await db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
     if (!task) return res.status(404).json({ success: false, error: 'Nhiệm vụ không tồn tại' });
 
     const extId = 'ext_' + Date.now();
     const approverId = task.current_assigner_id || task.created_by;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO task_extensions (id, task_id, requester_id, approver_id, old_due_date, requested_due_date, reason)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(extId, task_id, requester_id, approverId, task.due_date || 'Chưa đặt', requested_due_date, reason);
 
     // Update Task status
-    db.prepare(`
+    await db.prepare(`
       UPDATE standalone_tasks 
       SET status = 'DE_XUAT_GIA_HAN', updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
     `).run(task_id);
 
     // Send Notification to Approver
-    const requester = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(requester_id);
-    db.prepare(`
+    const requester = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(requester_id);
+    await db.prepare(`
       INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message)
       VALUES (?, ?, ?, 'EXTENSION_REQUESTED', ?, ?)
     `).run(
@@ -255,18 +255,18 @@ export async function requestExtension(req, res) {
 export async function approveExtension(req, res) {
   try {
     const { extension_id, approver_id, action } = req.body; // action: 'APPROVE' or 'REJECT'
-    const ext = db.prepare('SELECT * FROM task_extensions WHERE id = ?').get(extension_id);
+    const ext = await db.prepare('SELECT * FROM task_extensions WHERE id = ?').get(extension_id);
     if (!ext) return res.status(404).json({ success: false, error: 'Đề xuất không tồn tại' });
 
     if (action === 'APPROVE') {
-      db.prepare("UPDATE task_extensions SET status = 'APPROVED' WHERE id = ?").run(extension_id);
-      db.prepare(`
+      await db.prepare("UPDATE task_extensions SET status = 'APPROVED' WHERE id = ?").run(extension_id);
+      await db.prepare(`
         UPDATE standalone_tasks 
         SET due_date = ?, status = 'DANG_THUC_HIEN', updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
       `).run(ext.requested_due_date, ext.task_id);
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message)
         VALUES (?, ?, ?, 'EXTENSION_APPROVED', ?, ?)
       `).run(
@@ -277,14 +277,14 @@ export async function approveExtension(req, res) {
         `Đề xuất gia hạn nhiệm vụ của bạn đã được chấp thuận. Hạn mới: ${ext.requested_due_date}.`
       );
     } else {
-      db.prepare("UPDATE task_extensions SET status = 'REJECTED' WHERE id = ?").run(extension_id);
-      db.prepare(`
+      await db.prepare("UPDATE task_extensions SET status = 'REJECTED' WHERE id = ?").run(extension_id);
+      await db.prepare(`
         UPDATE standalone_tasks 
         SET status = 'DANG_THUC_HIEN', updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
       `).run(ext.task_id);
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message)
         VALUES (?, ?, ?, 'EXTENSION_REJECTED', ?, ?)
       `).run(
@@ -313,13 +313,13 @@ export async function completeTask(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu mã nhiệm vụ' });
     }
 
-    const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
+    const task = await db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
     if (!task) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy nhiệm vụ' });
     }
 
     // Update standalone task status to DA_HOAN_THANH
-    db.prepare(`
+    await db.prepare(`
       UPDATE standalone_tasks 
       SET status = 'DA_HOAN_THANH',
           completion_proof = ?,
@@ -331,7 +331,7 @@ export async function completeTask(req, res) {
 
     // Synchronize linked tasks in weekly reports (tasks table)
     try {
-      db.prepare(`
+      await db.prepare(`
         UPDATE tasks 
         SET tien_do = 'Hoàn thành',
             san_pham = COALESCE(NULLIF(?, ''), san_pham),
@@ -343,7 +343,7 @@ export async function completeTask(req, res) {
     }
 
     // Send notifications to assigner & assigned assignees
-    const completer = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
+    const completer = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
     const completerName = completer ? completer.full_name : 'Cán bộ';
 
     let assignees = [];
@@ -366,7 +366,7 @@ export async function completeTask(req, res) {
 
     for (const recipientId of recipientIds) {
       const notifId = 'notif_cmp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message)
         VALUES (?, ?, ?, 'TASK_COMPLETED', ?, ?)
       `).run(
@@ -397,7 +397,7 @@ export async function getSyncedDirectiveTasks(req, res) {
     }
 
     // Retrieve active tasks assigned to this account
-    let tasks = db.prepare(`
+    let tasks = await db.prepare(`
       SELECT t.*, 
              u_assigner.full_name as assigner_name,
              u_assigner.position_level as assigner_position
@@ -433,7 +433,7 @@ export async function deleteTask(req, res) {
     const { id } = req.params;
     if (!id) return res.status(400).json({ success: false, error: 'Thiếu ID nhiệm vụ' });
 
-    db.prepare('DELETE FROM standalone_tasks WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM standalone_tasks WHERE id = ?').run(id);
     res.json({ success: true, message: 'Đã xóa / thu hồi nhiệm vụ thành công' });
   } catch (error) {
     console.error('Lỗi deleteTask standalone:', error);
@@ -455,7 +455,7 @@ export async function publishPlan(req, res) {
     }
 
     // Find all tasks that have staged assignees with is_dispatched = 0 for this assigner (or admin)
-    const tasks = db.prepare(`
+    const tasks = await db.prepare(`
       SELECT * FROM standalone_tasks 
       WHERE assigned_assignees IS NOT NULL AND assigned_assignees != '[]'
     `).all();
@@ -475,7 +475,7 @@ export async function publishPlan(req, res) {
       return res.status(400).json({ success: false, error: 'Chưa có nhiệm vụ nào được chọn giao người nhận mới để ban hành.' });
     }
 
-    const assignerUser = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
+    const assignerUser = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
     const assignerName = assignerUser ? assignerUser.full_name : 'Lãnh đạo';
 
     let publishedCount = 0;
@@ -523,7 +523,7 @@ export async function publishPlan(req, res) {
       const targetLevels = Array.from(new Set(assignees.map(a => a.position_level))).join(',');
 
       // Update Task to DA_GIAO & is_dispatched = 1
-      db.prepare(`
+      await db.prepare(`
         UPDATE standalone_tasks 
         SET current_assignee_id = ?,
             current_assigner_id = ?,
@@ -540,14 +540,14 @@ export async function publishPlan(req, res) {
       // Record History & Notifications for newly dispatched assignees
       for (const item of newlyDispatchedAssignees) {
         const historyId = 'hist_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO task_assignment_history (
             id, task_id, assigner_id, assignee_id, from_position_level, to_position_level, instruction_note
           ) VALUES (?, ?, ?, ?, 'KHO_VIEC', ?, ?)
         `).run(historyId, t.id, assigner_id, item.account_id, item.position_level, item.instruction_note || '');
 
         const notifId = 'notif_pub_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message)
           VALUES (?, ?, ?, 'TASK_ASSIGNED', ?, ?)
         `).run(
@@ -583,7 +583,7 @@ export async function stageAssignee(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin tạm ứng người nhận' });
     }
 
-    const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
+    const task = await db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
     if (!task) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy nhiệm vụ' });
     }
@@ -595,14 +595,14 @@ export async function stageAssignee(req, res) {
       assignees = [];
     }
 
-    const assigneeAccount = db.prepare('SELECT id, full_name, position_level FROM accounts WHERE id = ?').get(assignee_id);
+    const assigneeAccount = await db.prepare('SELECT id, full_name, position_level FROM accounts WHERE id = ?').get(assignee_id);
     if (!assigneeAccount) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người nhận' });
     }
 
     let assignerName = 'Cấp trên';
     if (assigner_id) {
-      const assignerAcc = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
+      const assignerAcc = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
       if (assignerAcc) {
         assignerName = assignerAcc.full_name;
       }
@@ -627,7 +627,7 @@ export async function stageAssignee(req, res) {
 
     const targetLevels = Array.from(new Set(assignees.map(a => a.position_level))).join(',');
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE standalone_tasks 
       SET assigned_assignees = ?, 
           target_position_level = ?, 
@@ -655,14 +655,14 @@ export async function bulkStageAssignee(req, res) {
       return res.status(400).json({ success: false, error: 'Thông tin giao việc hàng loạt không đầy đủ' });
     }
 
-    const assigneeAccount = db.prepare('SELECT id, full_name, position_level FROM accounts WHERE id = ?').get(assignee_id);
+    const assigneeAccount = await db.prepare('SELECT id, full_name, position_level FROM accounts WHERE id = ?').get(assignee_id);
     if (!assigneeAccount) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản người nhận' });
     }
 
     let assignerName = 'Cấp trên';
     if (assigner_id) {
-      const assignerAcc = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
+      const assignerAcc = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(assigner_id);
       if (assignerAcc) {
         assignerName = assignerAcc.full_name;
       }
@@ -675,7 +675,7 @@ export async function bulkStageAssignee(req, res) {
 
     try {
       for (const taskId of task_ids) {
-        const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(taskId);
+        const task = await db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(taskId);
         if (!task) continue;
 
         let assignees = [];
@@ -702,7 +702,7 @@ export async function bulkStageAssignee(req, res) {
 
         const targetLevels = Array.from(new Set(assignees.map(a => a.position_level))).join(',');
 
-        db.prepare(`
+        await db.prepare(`
           UPDATE standalone_tasks 
           SET assigned_assignees = ?, 
               target_position_level = ?, 
@@ -742,7 +742,7 @@ export async function bulkDeleteTasks(req, res) {
 
     try {
       const placeholders = task_ids.map(() => '?').join(',');
-      db.prepare(`DELETE FROM standalone_tasks WHERE id IN (${placeholders})`).run(...task_ids);
+      await db.prepare(`DELETE FROM standalone_tasks WHERE id IN (${placeholders})`).run(...task_ids);
       db.exec('COMMIT;');
       res.json({ success: true, count: task_ids.length, message: `Đã xóa thành công ${task_ids.length} nhiệm vụ khỏi Kho Chung` });
     } catch (err) {
@@ -767,7 +767,7 @@ export async function unstageAssignee(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu task_id hoặc assignee_id' });
     }
 
-    const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
+    const task = await db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(task_id);
     if (!task) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy nhiệm vụ' });
     }
@@ -788,7 +788,7 @@ export async function unstageAssignee(req, res) {
     if (assignees.length > 0) {
       assignees[0].is_primary = true;
       targetLevels = Array.from(new Set(assignees.map(a => a.position_level))).join(',');
-      db.prepare(`
+      await db.prepare(`
         UPDATE standalone_tasks 
         SET assigned_assignees = ?, 
             target_position_level = ?,
@@ -800,7 +800,7 @@ export async function unstageAssignee(req, res) {
       `).run(JSON.stringify(assignees), targetLevels, assignees[0].account_id, status, isDispatched, task_id);
     } else {
       // 0 assignees left -> Return to global task pool & clear current assignee/assigner!
-      db.prepare(`
+      await db.prepare(`
         UPDATE standalone_tasks 
         SET assigned_assignees = '[]', 
             target_position_level = '',
@@ -828,7 +828,7 @@ export async function dismissPoolTask(req, res) {
     const { id } = req.body;
     if (!id) return res.status(400).json({ success: false, error: 'Thiếu ID nhiệm vụ' });
 
-    db.prepare(`UPDATE standalone_tasks SET is_pool_hidden = 1 WHERE id = ?`).run(id);
+    await db.prepare(`UPDATE standalone_tasks SET is_pool_hidden = 1 WHERE id = ?`).run(id);
     res.json({ success: true, message: 'Đã dọn dẹp ẩn nhiệm vụ khỏi kho chung' });
   } catch (error) {
     console.error('Lỗi dismissPoolTask:', error);
@@ -847,7 +847,7 @@ export async function batchImportTasks(req, res) {
     }
 
     // Kiểm tra quyền: Chỉ vai trò Văn thư mới có quyền Import dữ liệu
-    const creator = db.prepare('SELECT id, role, position_level, username FROM accounts WHERE id = ?').get(created_by);
+    const creator = await db.prepare('SELECT id, role, position_level, username FROM accounts WHERE id = ?').get(created_by);
     const isVanThu = creator && (creator.position_level === 'VAN_THU' || creator.role === 'VAN_THU' || creator.username === 'vanthu');
     if (!isVanThu) {
       return res.status(403).json({ success: false, error: 'Chỉ tài khoản có vai trò Văn thư mới có quyền import dữ liệu từ Excel' });
@@ -868,7 +868,7 @@ export async function batchImportTasks(req, res) {
       for (const t of tasks) {
         if (!t.title || !t.title.trim()) continue;
 
-        const count = db.prepare('SELECT COUNT(*) as c FROM standalone_tasks').get().c + 1;
+        const count = await db.prepare('SELECT COUNT(*) as c FROM standalone_tasks').get().c + 1;
         const taskId = 'task_st_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '_' + importedCount;
         
         let taskCode = t.task_code;
@@ -876,7 +876,7 @@ export async function batchImportTasks(req, res) {
           taskCode = `NV-${currentYear}-${String(count).padStart(3, '0')}`;
         }
 
-        insertStmt.run(
+        await insertStmt.run(
           taskId,
           taskCode,
           t.title.trim(),

@@ -12,7 +12,7 @@ export async function login(req, res) {
       return res.status(400).json({ success: false, error: 'Vui lòng nhập tên đăng nhập' });
     }
 
-    const account = db.prepare(`
+    const account = await db.prepare(`
       SELECT a.id, a.username, a.full_name, a.role, a.position_level, a.department_id, a.password, d.name as department_name, d.code as department_code
       FROM accounts a
       JOIN departments d ON a.department_id = d.id
@@ -52,8 +52,8 @@ export async function login(req, res) {
  */
 export async function getDepartments(req, res) {
   try {
-    const depts = db.prepare('SELECT * FROM departments ORDER BY code ASC').all();
-    const accounts = db.prepare(`
+    const depts = await db.prepare('SELECT * FROM departments ORDER BY code ASC').all();
+    const accounts = await db.prepare(`
       SELECT a.id, a.username, a.full_name, a.role, a.position_level, a.department_id, a.is_active, d.name as department_name, d.code as department_code
       FROM accounts a
       JOIN departments d ON a.department_id = d.id
@@ -71,7 +71,7 @@ export async function getDepartments(req, res) {
  */
 export async function getAccounts(req, res) {
   try {
-    const accounts = db.prepare(`
+    const accounts = await db.prepare(`
       SELECT a.id, a.username, a.full_name, a.role, a.position_level, a.department_id, a.is_active, d.name as department_name, d.code as department_code
       FROM accounts a
       JOIN departments d ON a.department_id = d.id
@@ -94,7 +94,7 @@ export async function createAccount(req, res) {
       return res.status(400).json({ success: false, error: 'Vui lòng điền đầy đủ thông tin tài khoản' });
     }
 
-    const existing = db.prepare('SELECT id FROM accounts WHERE username = ?').get(username);
+    const existing = await db.prepare('SELECT id FROM accounts WHERE username = ?').get(username);
     if (existing) {
       return res.status(400).json({ success: false, error: `Tên đăng nhập "${username}" đã tồn tại!` });
     }
@@ -102,7 +102,7 @@ export async function createAccount(req, res) {
     const newId = `acc_${username}_${Date.now()}`;
     const posLevel = position_level || 'CHUYEN_VIEN';
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO accounts (id, department_id, username, password, full_name, role, position_level)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(newId, department_id, username, password, full_name, role || 'STAFF', posLevel);
@@ -125,7 +125,7 @@ export async function updateAccount(req, res) {
       return res.status(400).json({ success: false, error: 'Vui lòng điền đầy đủ thông tin tài khoản' });
     }
 
-    const existing = db.prepare('SELECT id FROM accounts WHERE username = ? AND id != ?').get(username, id);
+    const existing = await db.prepare('SELECT id FROM accounts WHERE username = ? AND id != ?').get(username, id);
     if (existing) {
       return res.status(400).json({ success: false, error: `Tên đăng nhập "${username}" đã được sử dụng bởi tài khoản khác!` });
     }
@@ -134,13 +134,13 @@ export async function updateAccount(req, res) {
     const activeState = is_active !== undefined ? Number(is_active) : 1;
 
     if (password && password.trim()) {
-      db.prepare(`
+      await db.prepare(`
         UPDATE accounts
         SET username = ?, password = ?, full_name = ?, department_id = ?, role = ?, position_level = ?, is_active = ?
         WHERE id = ?
       `).run(username, password.trim(), full_name, department_id, role || 'STAFF', posLevel, activeState, id);
     } else {
-      db.prepare(`
+      await db.prepare(`
         UPDATE accounts
         SET username = ?, full_name = ?, department_id = ?, role = ?, position_level = ?, is_active = ?
         WHERE id = ?
@@ -163,7 +163,7 @@ export async function toggleAccountStatus(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu ID tài khoản' });
     }
 
-    const account = db.prepare('SELECT id, username, is_active FROM accounts WHERE id = ?').get(id);
+    const account = await db.prepare('SELECT id, username, is_active FROM accounts WHERE id = ?').get(id);
     if (!account) {
       return res.status(404).json({ success: false, error: 'Tài khoản không tồn tại' });
     }
@@ -173,7 +173,7 @@ export async function toggleAccountStatus(req, res) {
     }
 
     const newStatus = account.is_active === 1 ? 0 : 1;
-    db.prepare('UPDATE accounts SET is_active = ? WHERE id = ?').run(newStatus, id);
+    await db.prepare('UPDATE accounts SET is_active = ? WHERE id = ?').run(newStatus, id);
 
     return res.json({
       success: true,
@@ -195,7 +195,7 @@ export async function bulkImportAccounts(req, res) {
       return res.status(400).json({ success: false, error: 'Danh sách tài khoản import rỗng hoặc không hợp lệ' });
     }
 
-    const depts = db.prepare('SELECT id, code, name FROM departments').all();
+    const depts = await db.prepare('SELECT id, code, name FROM departments').all();
     const deptMapByCode = new Map();
     const deptMapByName = new Map();
     depts.forEach(d => {
@@ -203,7 +203,7 @@ export async function bulkImportAccounts(req, res) {
       deptMapByName.set(String(d.name).trim().toLowerCase(), d.id);
     });
 
-    const existingAccounts = db.prepare('SELECT username FROM accounts').all();
+    const existingAccounts = await db.prepare('SELECT username FROM accounts').all();
     const existingUsernames = new Set(existingAccounts.map(a => String(a.username).trim().toLowerCase()));
 
     let importedCount = 0;
@@ -215,40 +215,36 @@ export async function bulkImportAccounts(req, res) {
       VALUES (?, ?, ?, ?, ?, ?, ?, 1)
     `);
 
-    const runImport = db.transaction((items) => {
-      for (const item of items) {
-        const uName = String(item.username || '').trim();
-        const pwd = String(item.password || '').trim();
-        const fullName = String(item.full_name || item.fullName || '').trim();
-        const deptCode = String(item.department_code || item.deptCode || item.department_id || '').trim();
-        const posLevel = String(item.position_level || item.posLevel || 'CHUYEN_VIEN').trim();
-        const role = String(item.role || 'STAFF').trim();
+    for (const item of accounts) {
+      const uName = String(item.username || '').trim();
+      const pwd = String(item.password || '').trim();
+      const fullName = String(item.full_name || item.fullName || '').trim();
+      const deptCode = String(item.department_code || item.deptCode || item.department_id || '').trim();
+      const posLevel = String(item.position_level || item.posLevel || 'CHUYEN_VIEN').trim();
+      const role = String(item.role || 'STAFF').trim();
 
-        if (!uName || !pwd || !fullName) {
-          skippedCount++;
-          skippedDetails.push(`Bỏ qua tài khoản thiếu thông tin (Username/Mật khẩu/Họ tên): ${uName || 'N/A'}`);
-          continue;
-        }
-
-        if (existingUsernames.has(uName.toLowerCase())) {
-          skippedCount++;
-          skippedDetails.push(`Tên đăng nhập "${uName}" đã tồn tại trên hệ thống.`);
-          continue;
-        }
-
-        let deptId = deptMapByCode.get(deptCode.toLowerCase()) || deptMapByName.get(deptCode.toLowerCase());
-        if (!deptId && depts.length > 0) {
-          deptId = depts[0].id;
-        }
-
-        const newId = `acc_${uName}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-        insertStmt.run(newId, deptId, uName, pwd, fullName, role, posLevel);
-        existingUsernames.add(uName.toLowerCase());
-        importedCount++;
+      if (!uName || !pwd || !fullName) {
+        skippedCount++;
+        skippedDetails.push(`Bỏ qua tài khoản thiếu thông tin (Username/Mật khẩu/Họ tên): ${uName || 'N/A'}`);
+        continue;
       }
-    });
 
-    runImport(accounts);
+      if (existingUsernames.has(uName.toLowerCase())) {
+        skippedCount++;
+        skippedDetails.push(`Tên đăng nhập "${uName}" đã tồn tại trên hệ thống.`);
+        continue;
+      }
+
+      let deptId = deptMapByCode.get(deptCode.toLowerCase()) || deptMapByName.get(deptCode.toLowerCase());
+      if (!deptId && depts.length > 0) {
+        deptId = depts[0].id;
+      }
+
+      const newId = `acc_${uName}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+      await insertStmt.run(newId, deptId, uName, pwd, fullName, role, posLevel);
+      existingUsernames.add(uName.toLowerCase());
+      importedCount++;
+    }
 
     return res.json({
       success: true,
@@ -273,18 +269,18 @@ export async function updateUserProfile(req, res) {
       return res.status(400).json({ success: false, error: 'Vui lòng cung cấp ID người dùng và Họ tên' });
     }
 
-    const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(userId);
+    const account = await db.prepare('SELECT * FROM accounts WHERE id = ?').get(userId);
     if (!account) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy thông tin người dùng' });
     }
 
     if (password && password.trim()) {
-      db.prepare('UPDATE accounts SET full_name = ?, password = ? WHERE id = ?').run(full_name.trim(), password.trim(), userId);
+      await db.prepare('UPDATE accounts SET full_name = ?, password = ? WHERE id = ?').run(full_name.trim(), password.trim(), userId);
     } else {
-      db.prepare('UPDATE accounts SET full_name = ? WHERE id = ?').run(full_name.trim(), userId);
+      await db.prepare('UPDATE accounts SET full_name = ? WHERE id = ?').run(full_name.trim(), userId);
     }
 
-    const updated = db.prepare(`
+    const updated = await db.prepare(`
       SELECT a.id, a.username, a.full_name, a.role, a.position_level, a.department_id, d.name as department_name, d.code as department_code
       FROM accounts a
       JOIN departments d ON a.department_id = d.id
@@ -316,7 +312,7 @@ export async function updateUserProfile(req, res) {
  */
 export async function getRoles(req, res) {
   try {
-    const roles = db.prepare('SELECT * FROM custom_roles ORDER BY level_rank ASC').all();
+    const roles = await db.prepare('SELECT * FROM custom_roles ORDER BY level_rank ASC').all();
     return res.json({ success: true, roles });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -331,7 +327,7 @@ export async function createRole(req, res) {
     }
 
     const roleId = `role_${Date.now()}`;
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO custom_roles (id, code, name, level_rank, description, scope_delegation)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(roleId, code, name, level_rank, description || '', scope_delegation || '');
@@ -352,7 +348,7 @@ export async function deleteAccount(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu ID tài khoản' });
     }
 
-    db.prepare('DELETE FROM accounts WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM accounts WHERE id = ?').run(id);
     return res.json({ success: true, message: 'Đã xóa tài khoản thành công' });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -370,13 +366,13 @@ export async function createDepartment(req, res) {
     }
 
     const cleanCode = code.toUpperCase().trim();
-    const existing = db.prepare('SELECT id FROM departments WHERE code = ?').get(cleanCode);
+    const existing = await db.prepare('SELECT id FROM departments WHERE code = ?').get(cleanCode);
     if (existing) {
       return res.status(400).json({ success: false, error: `Mã phòng ban "${cleanCode}" đã tồn tại!` });
     }
 
     const newId = `dept_${cleanCode.toLowerCase()}_${Date.now()}`;
-    db.prepare('INSERT INTO departments (id, name, code) VALUES (?, ?, ?)').run(newId, name, cleanCode);
+    await db.prepare('INSERT INTO departments (id, name, code) VALUES (?, ?, ?)').run(newId, name, cleanCode);
 
     return res.json({ success: true, message: `Đã tạo Phòng/Ban "${name}" thành công!`, department: { id: newId, name, code: cleanCode } });
   } catch (error) {
@@ -393,13 +389,13 @@ export async function getReportHistory(req, res) {
     const targetDeptId = department_id || 'dept_vp';
     const currentUserId = account_id || '';
 
-    const currentUser = currentUserId ? db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId) : null;
+    const currentUser = currentUserId ? await db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId) : null;
     const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
     let reports = [];
 
     if (isAdmin) {
-      reports = db.prepare(`
+      reports = await db.prepare(`
         SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi, d.code as don_vi_code, 'ADMIN' as user_permission
         FROM reports r
         JOIN accounts a ON r.account_id = a.id
@@ -407,7 +403,7 @@ export async function getReportHistory(req, res) {
         ORDER BY r.updated_at DESC, r.year DESC, r.week_number DESC
       `).all();
     } else {
-      reports = db.prepare(`
+      reports = await db.prepare(`
         SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi, d.code as don_vi_code,
           CASE 
             WHEN r.account_id = ? THEN 'OWNER'
@@ -423,8 +419,8 @@ export async function getReportHistory(req, res) {
     }
 
     // Tính toán số lượng task và tỷ lệ hoàn thành cho mỗi báo cáo
-    const reportsWithStats = reports.map(r => {
-      const tasks = db.prepare('SELECT tien_do, table_type FROM tasks WHERE report_id = ?').all(r.id);
+    const reportsWithStats = await Promise.all(reports.map(async r => {
+      const tasks = await db.prepare('SELECT tien_do, table_type FROM tasks WHERE report_id = ?').all(r.id);
       const t1 = tasks.filter(t => t.table_type === 1);
       const t2 = tasks.filter(t => t.table_type === 2);
       const doneCount = t1.filter(t => t.tien_do === 'Hoàn thành').length;
@@ -438,7 +434,7 @@ export async function getReportHistory(req, res) {
         done_t1: doneCount,
         percent_done: `${percent}%`
       };
-    });
+    }));
 
     return res.json({ success: true, reports: reportsWithStats });
   } catch (error) {
@@ -460,12 +456,12 @@ export async function getReportDetail(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin người dùng' });
     }
 
-    const currentUser = db.prepare('SELECT role, department_id FROM accounts WHERE id = ?').get(currentUserId);
+    const currentUser = await db.prepare('SELECT role, department_id FROM accounts WHERE id = ?').get(currentUserId);
     const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
     let report;
     if (report_id) {
-      report = db.prepare(`
+      report = await db.prepare(`
         SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
         FROM reports r
         JOIN accounts a ON r.account_id = a.id
@@ -477,7 +473,7 @@ export async function getReportDetail(req, res) {
       const targetYear = parseInt(year || '2026', 10);
 
       // 1. Tìm báo cáo theo account_id hiện tại
-      report = db.prepare(`
+      report = await db.prepare(`
         SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
         FROM reports r
         JOIN accounts a ON r.account_id = a.id
@@ -487,7 +483,7 @@ export async function getReportDetail(req, res) {
 
       // 2. Nếu là ADMIN và có department_id, ADMIN mới được xem báo cáo phòng ban đó
       if (!report && isAdmin && department_id) {
-        report = db.prepare(`
+        report = await db.prepare(`
           SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
           FROM reports r
           JOIN accounts a ON r.account_id = a.id
@@ -499,7 +495,7 @@ export async function getReportDetail(req, res) {
 
       // 3. Dự phòng: Tìm theo báo cáo được chia sẻ cho account_id
       if (!report) {
-        report = db.prepare(`
+        report = await db.prepare(`
           SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
           FROM reports r
           JOIN accounts a ON r.account_id = a.id
@@ -522,7 +518,7 @@ export async function getReportDetail(req, res) {
     } else if (isAdmin) {
       userPermission = 'ADMIN';
     } else {
-      const share = db.prepare('SELECT permission FROM report_shares WHERE report_id = ? AND shared_with_account_id = ?').get(report.id, currentUserId);
+      const share = await db.prepare('SELECT permission FROM report_shares WHERE report_id = ? AND shared_with_account_id = ?').get(report.id, currentUserId);
       if (share) {
         userPermission = share.permission; // 'VIEW' or 'EDIT'
       }
@@ -532,7 +528,7 @@ export async function getReportDetail(req, res) {
       return res.status(403).json({ success: false, error: 'Bạn không có quyền xem báo cáo tuần này của người khác (Chưa được chia sẻ).' });
     }
 
-    const tasks = db.prepare('SELECT * FROM tasks WHERE report_id = ? ORDER BY table_type ASC, order_index ASC').all(report.id);
+    const tasks = await db.prepare('SELECT * FROM tasks WHERE report_id = ? ORDER BY table_type ASC, order_index ASC').all(report.id);
 
     const table1 = tasks.filter(t => t.table_type === 1).map(t => ({
       id: t.id,
@@ -611,11 +607,11 @@ export async function saveReport(req, res) {
     }
 
     // Lấy thông tin tài khoản người thực hiện lưu
-    const editorAccount = db.prepare('SELECT full_name, role FROM accounts WHERE id = ?').get(currentUserId);
+    const editorAccount = await db.prepare('SELECT full_name, role FROM accounts WHERE id = ?').get(currentUserId);
     const editorName = editorAccount ? editorAccount.full_name : currentUserId;
 
     // Kiểm tra xem báo cáo đã tồn tại chưa
-    const existingReport = db.prepare("SELECT * FROM reports WHERE id = ? OR (account_id = ? AND COALESCE(report_type, 'SINGLE') = 'SINGLE' AND week_number = ? AND year = ?)").get(targetReportId, currentUserId, week, year);
+    const existingReport = await db.prepare("SELECT * FROM reports WHERE id = ? OR (account_id = ? AND COALESCE(report_type, 'SINGLE') = 'SINGLE' AND week_number = ? AND year = ?)").get(targetReportId, currentUserId, week, year);
 
     if (existingReport) {
       targetReportId = existingReport.id;
@@ -625,7 +621,7 @@ export async function saveReport(req, res) {
       if (existingReport.account_id === currentUserId || (editorAccount && editorAccount.role === 'ADMIN')) {
         canEdit = true;
       } else {
-        const share = db.prepare('SELECT permission FROM report_shares WHERE report_id = ? AND shared_with_account_id = ?').get(targetReportId, currentUserId);
+        const share = await db.prepare('SELECT permission FROM report_shares WHERE report_id = ? AND shared_with_account_id = ?').get(targetReportId, currentUserId);
         if (share && share.permission === 'EDIT') {
           canEdit = true;
         }
@@ -658,7 +654,7 @@ export async function saveReport(req, res) {
     try {
       if (existingReport) {
         // Update existing report
-        db.prepare(`
+        await db.prepare(`
           UPDATE reports
           SET kho_khan = ?, status = ?, created_at = COALESCE(?, created_at), updated_at = CURRENT_TIMESTAMP, last_edited_by = ?
           WHERE id = ?
@@ -666,7 +662,7 @@ export async function saveReport(req, res) {
 
       } else {
         // Create new report owned by currentUserId
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, kho_khan, created_at, updated_at, last_edited_by)
           VALUES (?, ?, ?, ?, ?, ?, 'SINGLE', ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, ?)
           ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
@@ -678,14 +674,14 @@ export async function saveReport(req, res) {
       }
 
       // Replace tasks for targetReportId
-      db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
+      await db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
 
       const stmtTask = db.prepare(`
         INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index, file_minh_chung, file_original_name, is_starred, is_recurring)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      (table1 || []).forEach((t, idx) => {
+      for (const [idx, t] of (table1 || []).entries()) {
         let cat = t.nhom || 'Thường xuyên';
         if (cat.toLowerCase().includes('đột')) cat = 'Đột xuất';
         else cat = 'Thường xuyên';
@@ -693,7 +689,7 @@ export async function saveReport(req, res) {
         // Generate guaranteed unique task ID to prevent PRIMARY KEY collisions
         const uniqueTaskId = `t1_${targetReportId}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-        stmtTask.run(
+        await stmtTask.run(
           uniqueTaskId,
           targetReportId,
           1,
@@ -710,9 +706,9 @@ export async function saveReport(req, res) {
           t.is_starred ? 1 : 0,
           t.is_recurring ? 1 : 0
         );
-      });
+      }
 
-      (table2 || []).forEach((t, idx) => {
+      for (const [idx, t] of (table2 || []).entries()) {
         let cat = t.nhom || 'Thường xuyên';
         if (cat.toLowerCase().includes('đột')) cat = 'Đột xuất';
         else cat = 'Thường xuyên';
@@ -720,7 +716,7 @@ export async function saveReport(req, res) {
         // Generate guaranteed unique task ID to prevent PRIMARY KEY collisions
         const uniqueTaskId = `t2_${targetReportId}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-        stmtTask.run(
+        await stmtTask.run(
           uniqueTaskId,
           targetReportId,
           2,
@@ -737,7 +733,7 @@ export async function saveReport(req, res) {
           t.is_starred ? 1 : 0,
           t.is_recurring ? 1 : 0
         );
-      });
+      }
 
       db.exec('COMMIT;');
       return res.json({ success: true, message: 'Đã lưu báo cáo thành công', report_id: targetReportId });
@@ -765,24 +761,24 @@ export async function carryOverNextWeek(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin người dùng (account_id)' });
     }
 
-    const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(accId);
+    const currentUser = await db.prepare('SELECT role FROM accounts WHERE id = ?').get(accId);
     const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
     const targetWeek = currWeek + 1;
     const targetYear = currYear;
 
     // 1. Lấy báo cáo tuần hiện tại của account
-    let currentReport = db.prepare(`
+    let currentReport = await db.prepare(`
       SELECT * FROM reports WHERE account_id = ? AND week_number = ? AND year = ?
     `).get(accId, currWeek, currYear);
 
     const consolidatedMasterId = `rpt_consolidated_office_${accId}_w${currWeek}_${currYear}`;
-    const consolidatedReport = db.prepare('SELECT * FROM reports WHERE account_id = ? AND report_type = \'CONSOLIDATED_OFFICE\' AND week_number = ? AND year = ?').get(accId, currWeek, currYear);
+    const consolidatedReport = await db.prepare('SELECT * FROM reports WHERE account_id = ? AND report_type = \'CONSOLIDATED_OFFICE\' AND week_number = ? AND year = ?').get(accId, currWeek, currYear);
 
     if (!currentReport && consolidatedReport) {
       currentReport = consolidatedReport;
     } else if (!currentReport && isAdmin && department_id) {
-      currentReport = db.prepare(`
+      currentReport = await db.prepare(`
         SELECT * FROM reports WHERE department_id = ? AND week_number = ? AND year = ?
       `).get(department_id, currWeek, currYear);
     }
@@ -795,7 +791,7 @@ export async function carryOverNextWeek(req, res) {
     const activeReportId = isConsolidated ? (consolidatedReport ? consolidatedReport.id : consolidatedMasterId) : currentReport.id;
 
     // 2. Lấy danh sách nhiệm vụ của tuần hiện tại (kèm team_code của từng tổ)
-    let currentTasks = db.prepare(`
+    let currentTasks = await db.prepare(`
       SELECT t.*, COALESCE(t.team_code, 'VAN_THU') as team_code
       FROM tasks t
       WHERE t.report_id = ? OR t.report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)
@@ -825,18 +821,18 @@ export async function carryOverNextWeek(req, res) {
       ? `rpt_consolidated_office_${accId}_w${targetWeek}_${targetYear}`
       : `rpt_${accId}_w${targetWeek}_${targetYear}`;
 
-    const existingTargetReport = db.prepare('SELECT id FROM reports WHERE id = ?').get(targetReportId);
+    const existingTargetReport = await db.prepare('SELECT id FROM reports WHERE id = ?').get(targetReportId);
 
     if (existingTargetReport) {
-      db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
+      await db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
     } else {
       if (isConsolidated) {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan)
           VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', 'Chưa có vướng mắc phát sinh')
         `).run(targetReportId, department_id || 'dept_vp', accId, targetWeek, targetYear);
       } else {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO reports (id, department_id, account_id, week_number, year, status, kho_khan)
           VALUES (?, ?, ?, ?, ?, 'DRAFT', 'Chưa có vướng mắc phát sinh')
         `).run(targetReportId, currentReport.department_id || department_id || 'dept_vp', accId, targetWeek, targetYear);
@@ -853,7 +849,7 @@ export async function carryOverNextWeek(req, res) {
     const addedContents = new Set();
 
     // 1. Chèn Nhiệm vụ Thường xuyên Bảng I
-    routineTable1.forEach(t => {
+    for (const t of (routineTable1 || [])) {
       const cleanContent = (t.noi_dung || '').trim().toLowerCase();
       const itemKey = `t1_${t.team_code || 'VAN_THU'}_${cleanContent}`;
       if (!cleanContent || addedContents.has(itemKey)) return;
@@ -865,7 +861,7 @@ export async function carryOverNextWeek(req, res) {
       const finalTrienKhai = t.trien_khai || '';
       const finalSanPham = t.san_pham || '';
 
-      stmtInsertTask.run(
+      await stmtInsertTask.run(
         newId,
         targetReportId,
         1, // Table 1
@@ -882,10 +878,10 @@ export async function carryOverNextWeek(req, res) {
         isStarred
       );
       carriedOverTasks.push({ id: newId, noi_dung: t.noi_dung, type: 'THUONG_XUYEN', source: 'Nhiệm vụ Thường xuyên Bảng I', team_code: t.team_code });
-    });
+    }
 
     // 2. Chèn Nhiệm vụ Chưa Hoàn thành Bảng I (Đang thực hiện / Chưa xong)
-    unfinishedTable1.forEach(t => {
+    for (const t of (unfinishedTable1 || [])) {
       const cleanContent = (t.noi_dung || '').trim().toLowerCase();
       const itemKey = `t1_${t.team_code || 'VAN_THU'}_${cleanContent}`;
       if (!cleanContent || addedContents.has(itemKey)) return;
@@ -896,7 +892,7 @@ export async function carryOverNextWeek(req, res) {
       const finalTrienKhai = t.trien_khai || '';
       const finalSanPham = t.san_pham || '';
 
-      stmtInsertTask.run(
+      await stmtInsertTask.run(
         newId,
         targetReportId,
         1, // Table 1
@@ -913,10 +909,10 @@ export async function carryOverNextWeek(req, res) {
         isStarred
       );
       carriedOverTasks.push({ id: newId, noi_dung: t.noi_dung, type: 'UNFINISHED', source: 'Nhiệm vụ dở dang Bảng I', team_code: t.team_code });
-    });
+    }
 
     // 3. Chèn Kế hoạch Bảng II tuần cũ sang BẢNG II tuần mới (Duy trì cho cả Tổ Văn thư và Tổ Chuyển đổi số)
-    plannedTable2.forEach(t => {
+    for (const t of (plannedTable2 || [])) {
       const cleanContent = (t.noi_dung || '').trim().toLowerCase();
       const itemKey = `t2_${t.team_code || 'VAN_THU'}_${cleanContent}`;
       if (!cleanContent || addedContents.has(itemKey)) return;
@@ -926,7 +922,7 @@ export async function carryOverNextWeek(req, res) {
       const isStarred = t.is_starred !== undefined ? t.is_starred : (t.category === 'Thường xuyên' || t.is_recurring ? 1 : 0);
       const finalTrienKhai = t.trien_khai || '';
 
-      stmtInsertTask.run(
+      await stmtInsertTask.run(
         newId,
         targetReportId,
         2, // Table 2 - Giữ đúng Bảng II Kế hoạch
@@ -943,7 +939,7 @@ export async function carryOverNextWeek(req, res) {
         isStarred
       );
       carriedOverTasks.push({ id: newId, noi_dung: t.noi_dung, type: 'PLANNED_TABLE2', source: 'Kế hoạch Bảng II', team_code: t.team_code });
-    });
+    }
 
     return res.json({
       success: true,
@@ -972,13 +968,13 @@ export async function shareReport(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin chia sẻ báo cáo' });
     }
 
-    const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(report_id);
+    const report = await db.prepare('SELECT * FROM reports WHERE id = ?').get(report_id);
     if (!report) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy báo cáo' });
     }
 
-    const sender = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(senderId);
-    const recipient = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(shared_with_account_id);
+    const sender = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(senderId);
+    const recipient = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(shared_with_account_id);
 
     if (!recipient) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản nhận' });
@@ -986,7 +982,7 @@ export async function shareReport(req, res) {
 
     // Upsert share record
     const shareId = `share_${report_id}_${shared_with_account_id}`;
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO report_shares (id, report_id, shared_with_account_id, permission, shared_by_account_id)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(report_id, shared_with_account_id) DO UPDATE SET
@@ -999,7 +995,7 @@ export async function shareReport(req, res) {
     const permText = permission === 'EDIT' ? 'Chỉnh sửa' : 'Chỉ xem';
     const senderName = sender ? sender.full_name : 'Một thành viên';
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message, report_id)
       VALUES (?, ?, ?, 'REPORT_SHARED', ?, ?, ?)
     `).run(
@@ -1031,7 +1027,7 @@ export async function getReportShares(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu ID báo cáo' });
     }
 
-    const shares = db.prepare(`
+    const shares = await db.prepare(`
       SELECT rs.id, rs.report_id, rs.permission, rs.created_at,
              a.id as shared_with_id, a.username, a.full_name, d.name as department_name
       FROM report_shares rs
@@ -1089,7 +1085,7 @@ export async function revokeReportShare(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu ID chia sẻ' });
     }
 
-    db.prepare('DELETE FROM report_shares WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM report_shares WHERE id = ?').run(id);
     return res.json({ success: true, message: 'Đã thu hồi quyền chia sẻ thành công' });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -1106,7 +1102,7 @@ export async function getNotifications(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu ID tài khoản' });
     }
 
-    const notifications = db.prepare(`
+    const notifications = await db.prepare(`
       SELECT n.*, a.full_name as sender_name
       FROM notifications n
       LEFT JOIN accounts a ON n.sender_account_id = a.id
@@ -1115,7 +1111,7 @@ export async function getNotifications(req, res) {
       LIMIT 30
     `).all(account_id);
 
-    const unreadCount = db.prepare(`
+    const unreadCount = await db.prepare(`
       SELECT COUNT(*) as count FROM notifications
       WHERE recipient_account_id = ? AND is_read = 0
     `).get(account_id).count;
@@ -1134,9 +1130,9 @@ export async function markNotificationRead(req, res) {
     const { notification_id, account_id, mark_all } = req.body;
 
     if (mark_all && account_id) {
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE recipient_account_id = ?').run(account_id);
+      await db.prepare('UPDATE notifications SET is_read = 1 WHERE recipient_account_id = ?').run(account_id);
     } else if (notification_id) {
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(notification_id);
+      await db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(notification_id);
     }
 
     return res.json({ success: true });
@@ -1194,12 +1190,12 @@ export async function getCandidateTasks(req, res) {
       return res.json({ success: true, tasks: [] });
     }
 
-    const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId);
+    const currentUser = await db.prepare('SELECT role FROM accounts WHERE id = ?').get(currentUserId);
     const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
     let reportTasks = [];
     if (isAdmin && department_id) {
-      reportTasks = db.prepare(`
+      reportTasks = await db.prepare(`
         SELECT t.*, r.week_number, r.year
         FROM tasks t
         JOIN reports r ON t.report_id = r.id
@@ -1219,7 +1215,7 @@ export async function getCandidateTasks(req, res) {
         ORDER BY r.year DESC, r.week_number DESC, t.order_index ASC
       `).all(currentUserId, department_id);
     } else {
-      reportTasks = db.prepare(`
+      reportTasks = await db.prepare(`
         SELECT t.*, r.week_number, r.year
         FROM tasks t
         JOIN reports r ON t.report_id = r.id
@@ -1243,7 +1239,7 @@ export async function getCandidateTasks(req, res) {
     // Fetch standalone tasks assigned to this user that are dispatched and not finished
     let standaloneTasks = [];
     try {
-      standaloneTasks = db.prepare(`
+      standaloneTasks = await db.prepare(`
         SELECT * FROM standalone_tasks
         WHERE is_dispatched = 1
           AND (status IS NULL OR (status != 'DA_HOAN_THANH' AND status != 'DA_HUY'))
@@ -1256,10 +1252,10 @@ export async function getCandidateTasks(req, res) {
     }
 
     // Map standalone tasks to candidate task items
-    const mappedStandalone = standaloneTasks.map(st => {
+    const mappedStandalone = await Promise.all((standaloneTasks || []).map(async st => {
       let assignerName = 'Lãnh đạo';
       if (st.current_assigner_id) {
-        const assigner = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(st.current_assigner_id);
+        const assigner = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(st.current_assigner_id);
         if (assigner) assignerName = assigner.full_name;
       }
       return {
@@ -1277,7 +1273,7 @@ export async function getCandidateTasks(req, res) {
         standalone_task_id: st.id,
         task_code: st.task_code
       };
-    });
+    }));
 
     return res.json({ success: true, tasks: [...mappedStandalone, ...reportTasks] });
   } catch (error) {
@@ -1297,11 +1293,11 @@ export async function getConsolidatedReportDetail(req, res) {
     const targetAccId = account_id || 'acc_vp_hoa';
 
     // 1. Tìm Báo cáo tổng hợp của chính tài khoản này
-    let masterReport = db.prepare("SELECT * FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(targetAccId, targetWeek, targetYear);
+    let masterReport = await db.prepare("SELECT * FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(targetAccId, targetWeek, targetYear);
 
     // 2. Nếu không tìm thấy báo cáo riêng, kiểm tra xem có báo cáo tổng hợp nào được chia sẻ với tài khoản này không
     if (!masterReport) {
-      masterReport = db.prepare(`
+      masterReport = await db.prepare(`
         SELECT r.* FROM reports r
         JOIN report_shares rs ON r.id = rs.report_id
         WHERE rs.shared_with_account_id = ? AND r.report_type = 'CONSOLIDATED_OFFICE' AND r.week_number = ? AND r.year = ?
@@ -1310,9 +1306,9 @@ export async function getConsolidatedReportDetail(req, res) {
     }
 
     // 3. Nếu là ADMIN và chưa có báo cáo riêng/chia sẻ, kiểm tra báo cáo phòng ban
-    const currentUser = db.prepare('SELECT role FROM accounts WHERE id = ?').get(targetAccId);
+    const currentUser = await db.prepare('SELECT role FROM accounts WHERE id = ?').get(targetAccId);
     if (!masterReport && currentUser && currentUser.role === 'ADMIN') {
-      masterReport = db.prepare(`
+      masterReport = await db.prepare(`
         SELECT r.* FROM reports r
         WHERE r.department_id = ? AND r.report_type = 'CONSOLIDATED_OFFICE' AND r.week_number = ? AND r.year = ?
         ORDER BY r.updated_at DESC
@@ -1323,19 +1319,19 @@ export async function getConsolidatedReportDetail(req, res) {
     const masterReportId = masterReport ? masterReport.id : `rpt_consolidated_office_${targetAccId}_w${targetWeek}_${targetYear}`;
 
     if (!masterReport) {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan)
         VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', 'Không')
         ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
           updated_at = CURRENT_TIMESTAMP
       `).run(masterReportId, department_id || 'dept_vp', targetAccId, targetWeek, targetYear);
-      masterReport = db.prepare("SELECT * FROM reports WHERE id = ?").get(masterReportId);
+      masterReport = await db.prepare("SELECT * FROM reports WHERE id = ?").get(masterReportId);
     }
 
     const activeReportId = masterReport.id;
 
     // 2. Lấy Mục III (doc_inspection_stats)
-    let docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(activeReportId);
+    let docStats = await db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(activeReportId);
     if (!docStats || docStats.length === 0) {
       const defaultDepts = [
         { name: 'Văn phòng', total: 5, err: 0, pages: 8 },
@@ -1346,22 +1342,22 @@ export async function getConsolidatedReportDetail(req, res) {
         { name: 'Phòng Kiểm tra Môi trường', total: 26, err: 7, pages: 39 }
       ];
       const stmt = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, total_pages, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)');
-      defaultDepts.forEach((d, i) => {
-        stmt.run(`ds_${activeReportId}_${i}`, activeReportId, d.name, d.total, d.err, d.pages || 0, i + 1);
-      });
-      docStats = db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(activeReportId);
+      for (const [i, d] of defaultDepts.entries()) {
+        await stmt.run(`ds_${activeReportId}_${i}`, activeReportId, d.name, d.total, d.err, d.pages || 0, i + 1);
+      }
+      docStats = await db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(activeReportId);
     }
 
     // 3. Lấy Mục IV & 4 Chữ ký (consolidated_report_meta)
     let userAcc;
     if (account_id) {
-      userAcc = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
+      userAcc = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
     }
     const defaultNguoiLap = userAcc ? userAcc.full_name : '';
 
-    let meta = db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
+    let meta = await db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
     if (!meta) {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note)
         VALUES (?, ?, 'Trần Thuận Hòa', ?, 'Nguyễn Đức Thắng', 'Hoàng Văn Dương', ?)
       `).run(
@@ -1370,16 +1366,16 @@ export async function getConsolidatedReportDetail(req, res) {
         defaultNguoiLap,
         'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần ' + targetWeek + ' và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần ' + (targetWeek + 1) + ' của Bộ phận Văn thư – Lưu trữ và Chuyển đổi số. Kính trình Lãnh đạo phòng xem xét./.'
       );
-      meta = db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
+      meta = await db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
     } else if (!meta.nguoi_lap_name || meta.nguoi_lap_name.includes('Nguyễn Thị Mai')) {
       if (defaultNguoiLap) {
         meta.nguoi_lap_name = defaultNguoiLap;
-        db.prepare('UPDATE consolidated_report_meta SET nguoi_lap_name = ? WHERE id = ?').run(defaultNguoiLap, meta.id);
+        await db.prepare('UPDATE consolidated_report_meta SET nguoi_lap_name = ? WHERE id = ?').run(defaultNguoiLap, meta.id);
       }
     }
 
     // 4. Lấy toàn bộ Tasks
-    const tasks = db.prepare(`
+    const tasks = await db.prepare(`
       SELECT t.*, COALESCE(t.team_code, 'VAN_THU') as team_code
       FROM tasks t
       WHERE t.report_id = ? OR t.report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)
@@ -1451,9 +1447,9 @@ export async function saveConsolidatedReport(req, res) {
     const year = parseInt(metadata.nam || '2026', 10);
     const accId = metadata.account_id || req.query.account_id || 'acc_vp_hoa';
 
-    let existing = db.prepare("SELECT id FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(accId, week, year);
+    let existing = await db.prepare("SELECT id FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(accId, week, year);
     if (!existing && metadata.report_id) {
-      existing = db.prepare("SELECT id FROM reports WHERE id = ?").get(metadata.report_id);
+      existing = await db.prepare("SELECT id FROM reports WHERE id = ?").get(metadata.report_id);
     }
 
     const targetReportId = existing ? existing.id : (metadata.report_id && metadata.report_id.includes(accId) ? metadata.report_id : `rpt_consolidated_office_${accId}_w${week}_${year}`);
@@ -1464,10 +1460,10 @@ export async function saveConsolidatedReport(req, res) {
       const deptId = metadata.department_id || 'dept_vp';
 
       if (existing) {
-        db.prepare('UPDATE reports SET kho_khan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        await db.prepare('UPDATE reports SET kho_khan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
           .run(metadata.kho_khan || 'Không', targetReportId);
       } else {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan)
           VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', ?)
           ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
@@ -1478,8 +1474,8 @@ export async function saveConsolidatedReport(req, res) {
 
       // 2. Upsert consolidated meta
       if (consolidated_meta) {
-        db.prepare('DELETE FROM consolidated_report_meta WHERE report_id = ?').run(targetReportId);
-        db.prepare(`
+        await db.prepare('DELETE FROM consolidated_report_meta WHERE report_id = ?').run(targetReportId);
+        await db.prepare(`
           INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
@@ -1495,10 +1491,10 @@ export async function saveConsolidatedReport(req, res) {
 
       // 3. Upsert doc_inspection_stats
       if (Array.isArray(doc_inspection_stats)) {
-        db.prepare('DELETE FROM doc_inspection_stats WHERE report_id = ?').run(targetReportId);
+        await db.prepare('DELETE FROM doc_inspection_stats WHERE report_id = ?').run(targetReportId);
         const stmtDs = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, total_pages, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        doc_inspection_stats.forEach((ds, idx) => {
-          stmtDs.run(
+        for (const [idx, ds] of (doc_inspection_stats || []).entries()) {
+          await stmtDs.run(
             `ds_${targetReportId}_${idx}_${Date.now()}`,
             targetReportId,
             ds.department_name || '',
@@ -1507,19 +1503,19 @@ export async function saveConsolidatedReport(req, res) {
             parseInt(ds.total_pages || '0', 10),
             idx + 1
           );
-        });
+        }
       }
 
       // 4. Upsert tasks (Clear existing tasks for this consolidated report and any linked sub-reports)
-      db.prepare('DELETE FROM tasks WHERE report_id = ? OR report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)').run(targetReportId, targetReportId);
+      await db.prepare('DELETE FROM tasks WHERE report_id = ? OR report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)').run(targetReportId, targetReportId);
       const stmtTask = db.prepare(`
         INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, order_index, team_code, file_minh_chung, is_starred, is_recurring)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      (table1 || []).forEach((t, idx) => {
+      for (const [idx, t] of (table1 || []).entries()) {
         const taskId = (t.id && !t.id.startsWith('t1_init')) ? t.id : `t1_${targetReportId}_${idx}`;
-        stmtTask.run(
+        await stmtTask.run(
           taskId,
           targetReportId,
           1,
@@ -1535,11 +1531,11 @@ export async function saveConsolidatedReport(req, res) {
           t.is_starred ? 1 : 0,
           t.is_recurring ? 1 : 0
         );
-      });
+      }
 
-      (table2 || []).forEach((t, idx) => {
+      for (const [idx, t] of (table2 || []).entries()) {
         const taskId = (t.id && !t.id.startsWith('t2_init')) ? t.id : `t2_${targetReportId}_${idx}`;
-        stmtTask.run(
+        await stmtTask.run(
           taskId,
           targetReportId,
           2,
@@ -1555,7 +1551,7 @@ export async function saveConsolidatedReport(req, res) {
           t.is_starred ? 1 : 0,
           t.is_recurring ? 1 : 0
         );
-      });
+      }
 
       db.exec('COMMIT;');
       return res.json({ success: true, message: 'Đã lưu Báo cáo tuần tổng hợp Văn phòng thành công!' });
@@ -1592,10 +1588,10 @@ export async function generateConsolidatedWord(req, res) {
 export async function clearAllTasks(req, res) {
   try {
     db.exec('PRAGMA foreign_keys = OFF;');
-    db.prepare('DELETE FROM task_extensions').run();
-    db.prepare('DELETE FROM task_assignment_history').run();
-    db.prepare('DELETE FROM standalone_tasks').run();
-    db.prepare('DELETE FROM tasks').run();
+    await db.prepare('DELETE FROM task_extensions').run();
+    await db.prepare('DELETE FROM task_assignment_history').run();
+    await db.prepare('DELETE FROM standalone_tasks').run();
+    await db.prepare('DELETE FROM tasks').run();
     db.exec('PRAGMA foreign_keys = ON;');
 
     return res.json({
@@ -1621,7 +1617,7 @@ export async function updateSignatureAndPin(req, res) {
       return res.status(400).json({ success: false, error: 'Mã PIN phải gồm đúng 6 chữ số (0-9)!' });
     }
 
-    const currentAcc = db.prepare('SELECT id, signature_url, pin_code_hash FROM accounts WHERE id = ?').get(account_id);
+    const currentAcc = await db.prepare('SELECT id, signature_url, pin_code_hash FROM accounts WHERE id = ?').get(account_id);
     if (!currentAcc) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản' });
     }
@@ -1629,7 +1625,7 @@ export async function updateSignatureAndPin(req, res) {
     const newSigUrl = signature_url || currentAcc.signature_url || '';
     const newPinHash = pin_code || currentAcc.pin_code_hash || '';
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE accounts
       SET signature_url = ?, pin_code_hash = ?, signature_updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -1662,7 +1658,7 @@ export async function submitReportForApproval(req, res) {
     const approversJson = JSON.stringify(approversArr);
 
     // 1. Cập nhật bảng reports
-    db.prepare(`
+    await db.prepare(`
       UPDATE reports
       SET approval_status = 'PENDING_APPROVAL',
           approvers_chain = ?,
@@ -1674,13 +1670,13 @@ export async function submitReportForApproval(req, res) {
     if (approver_slots) {
       const { to_truong_id, pho_chanh_van_phong_id, chanh_van_phong_id } = approver_slots;
 
-      const toTruongAcc = to_truong_id ? db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(to_truong_id) : null;
-      const phoChanhAcc = pho_chanh_van_phong_id ? db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(pho_chanh_van_phong_id) : null;
-      const chanhAcc = chanh_van_phong_id ? db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(chanh_van_phong_id) : null;
+      const toTruongAcc = to_truong_id ? await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(to_truong_id) : null;
+      const phoChanhAcc = pho_chanh_van_phong_id ? await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(pho_chanh_van_phong_id) : null;
+      const chanhAcc = chanh_van_phong_id ? await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(chanh_van_phong_id) : null;
 
-      const meta = db.prepare('SELECT id FROM consolidated_report_meta WHERE report_id = ?').get(report_id);
+      const meta = await db.prepare('SELECT id FROM consolidated_report_meta WHERE report_id = ?').get(report_id);
       if (meta) {
-        db.prepare(`
+        await db.prepare(`
           UPDATE consolidated_report_meta
           SET to_truong_name = COALESCE(?, to_truong_name),
               pho_chanh_van_phong_name = COALESCE(?, pho_chanh_van_phong_name),
@@ -1696,13 +1692,13 @@ export async function submitReportForApproval(req, res) {
     }
 
     // 3. Gửi thông báo cho TẤT CẢ những người duyệt được gán
-    const senderAcc = db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
+    const senderAcc = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
     const senderName = senderAcc ? senderAcc.full_name : 'Nhân viên';
 
     const uniqueApproverIds = Array.from(new Set(approversArr));
-    uniqueApproverIds.forEach((targetAccId) => {
+    for (const targetAccId of uniqueApproverIds) {
       if (!targetAccId) return;
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message, report_id)
         VALUES (?, ?, ?, 'REPORT_SUBMITTED', 'Báo cáo tuần chờ bạn duyệt', ?, ?)
       `).run(
@@ -1712,7 +1708,7 @@ export async function submitReportForApproval(req, res) {
         `${senderName} đã gửi trình duyệt Báo cáo tuần. Vui lòng kiểm tra và thực hiện Ký số xác thực.`,
         report_id
       );
-    });
+    }
 
     return res.json({
       success: true,
@@ -1734,7 +1730,7 @@ export async function getPendingReports(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu account_id' });
     }
 
-    const reports = db.prepare(`
+    const reports = await db.prepare(`
       SELECT r.*, a.full_name as author_name, d.name as department_name
       FROM reports r
       LEFT JOIN accounts a ON r.account_id = a.id
@@ -1762,7 +1758,7 @@ export async function signReportWithPin(req, res) {
     }
 
     // 1. Kiểm tra tài khoản
-    const account = db.prepare(`
+    const account = await db.prepare(`
       SELECT a.id, a.full_name, a.position_level, a.signature_url, a.pin_code_hash, d.name as department_name
       FROM accounts a
       LEFT JOIN departments d ON a.department_id = d.id
@@ -1786,7 +1782,7 @@ export async function signReportWithPin(req, res) {
     }
 
     // 2. Lấy thông tin báo cáo
-    const report = db.prepare('SELECT id, approvers_chain, approval_status FROM reports WHERE id = ?').get(report_id);
+    const report = await db.prepare('SELECT id, approvers_chain, approval_status FROM reports WHERE id = ?').get(report_id);
     if (!report) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy Báo cáo tuần' });
     }
@@ -1805,7 +1801,7 @@ export async function signReportWithPin(req, res) {
 
     // 3. Ghi vết Ký số vào report_signatures
     const sigId = `sig_${report_id}_${account_id}`;
-    db.prepare(`
+    await db.prepare(`
       INSERT OR REPLACE INTO report_signatures (
         id, report_id, signer_account_id, signer_name, signer_position, signer_department, signature_url, step_order, signed_at, note
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
@@ -1822,7 +1818,7 @@ export async function signReportWithPin(req, res) {
     );
 
     // 4. Kiểm tra tiến độ chuỗi người duyệt
-    const signedRows = db.prepare('SELECT signer_account_id FROM report_signatures WHERE report_id = ?').all(report_id);
+    const signedRows = await db.prepare('SELECT signer_account_id FROM report_signatures WHERE report_id = ?').all(report_id);
     const signedAccountIds = new Set(signedRows.map(r => r.signer_account_id));
 
     let newStatus = 'PARTIALLY_SIGNED';
@@ -1841,7 +1837,7 @@ export async function signReportWithPin(req, res) {
       newStatus = 'APPROVED';
     }
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE reports
       SET approval_status = ?, current_approver_id = ?
       WHERE id = ?
@@ -1875,7 +1871,7 @@ export async function getReportSignatures(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu report_id' });
     }
 
-    const signatures = db.prepare(`
+    const signatures = await db.prepare(`
       SELECT s.*, a.full_name, a.position_level
       FROM report_signatures s
       LEFT JOIN accounts a ON s.signer_account_id = a.id
@@ -1900,14 +1896,14 @@ export async function finalizeReport(req, res) {
       return res.status(400).json({ success: false, error: 'Thiếu report_id' });
     }
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE reports
       SET approval_status = 'APPROVED', status = 'APPROVED', updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(report_id);
 
     // Gửi thông báo đến người tạo & người duyệt
-    const report = db.prepare('SELECT account_id, approvers_chain FROM reports WHERE id = ?').get(report_id);
+    const report = await db.prepare('SELECT account_id, approvers_chain FROM reports WHERE id = ?').get(report_id);
     if (report) {
       const allRecipients = new Set([report.account_id]);
       try {
@@ -1915,9 +1911,9 @@ export async function finalizeReport(req, res) {
         chain.forEach((id) => allRecipients.add(id));
       } catch (e) {}
 
-      allRecipients.forEach(targetId => {
+      for (const targetId of allRecipients) {
         if (!targetId) return;
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO notifications (id, recipient_account_id, sender_account_id, type, title, message, report_id)
           VALUES (?, ?, ?, 'REPORT_FINALIZED', '🎉 Báo cáo tuần đã CHỐT CHÍNH THỨC', ?, ?)
         `).run(
@@ -1927,7 +1923,7 @@ export async function finalizeReport(req, res) {
           'Báo cáo tuần đã thu thập đầy đủ chữ ký số xác thực và được Chốt chính thức. Bạn có thể xem trước, in PDF và tải file Word hoàn chỉnh.',
           report_id
         );
-      });
+      }
     }
 
     return res.json({
