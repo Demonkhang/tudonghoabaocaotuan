@@ -1,5 +1,6 @@
 import { db } from '../db.js';
 import { createDocxReport, createConsolidatedOfficeDocx } from '../services/docxService.js';
+import { uploadBufferToCloudinary } from '../services/cloudinaryService.js';
 
 /**
  * 1. Đăng nhập tài khoản
@@ -1054,18 +1055,26 @@ export async function uploadEvidence(req, res) {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'Không tìm thấy file tải lên' });
     }
-    const fileUrl = `/uploads/${req.file.filename}`;
+
+    let fileInfo;
+    if (req.file.buffer) {
+      fileInfo = await uploadBufferToCloudinary(req.file.buffer, req.file.originalname);
+    } else {
+      fileInfo = {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        url: `/uploads/${req.file.filename}`,
+        size: req.file.size
+      };
+    }
+
     return res.json({
       success: true,
       message: 'Upload file minh chứng thành công',
-      file: {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        url: fileUrl,
-        size: req.file.size
-      }
+      file: fileInfo
     });
   } catch (error) {
+    console.error('Lỗi uploadEvidence:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
