@@ -80,8 +80,10 @@ const ddlList = [
     order_index INTEGER DEFAULT 0,
     file_minh_chung TEXT DEFAULT '',
     file_original_name TEXT DEFAULT '',
+    team_code VARCHAR(30) DEFAULT 'VAN_THU',
     is_starred SMALLINT DEFAULT 0,
-    is_recurring SMALLINT DEFAULT 0
+    is_recurring SMALLINT DEFAULT 0,
+    is_pinned SMALLINT DEFAULT 0
   )`,
 
   `CREATE TABLE IF NOT EXISTS standalone_tasks (
@@ -102,6 +104,7 @@ const ddlList = [
     proof_file_url TEXT DEFAULT '',
     assigned_assignees TEXT DEFAULT '[]',
     is_dispatched SMALLINT DEFAULT 0,
+    is_pool_hidden SMALLINT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
   )`,
@@ -165,6 +168,16 @@ const ddlList = [
     UNIQUE(report_id, signer_account_id)
   )`,
 
+  `CREATE TABLE IF NOT EXISTS doc_inspection_stats (
+    id TEXT PRIMARY KEY,
+    report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    department_name TEXT NOT NULL,
+    total_checked INTEGER DEFAULT 0,
+    error_count INTEGER DEFAULT 0,
+    total_pages INTEGER DEFAULT 0,
+    order_index INTEGER DEFAULT 0
+  )`,
+
   `CREATE TABLE IF NOT EXISTS consolidated_report_meta (
     id TEXT PRIMARY KEY,
     report_id TEXT NOT NULL UNIQUE REFERENCES reports(id) ON DELETE CASCADE,
@@ -174,7 +187,8 @@ const ddlList = [
     pho_chanh_van_phong_name TEXT DEFAULT 'Nguyễn Đức Thắng',
     pho_chanh_van_phong_opinion TEXT DEFAULT '',
     chanh_van_phong_name TEXT DEFAULT 'Hoàng Văn Dương',
-    chanh_van_phong_opinion TEXT DEFAULT ''
+    chanh_van_phong_opinion TEXT DEFAULT '',
+    ending_note TEXT DEFAULT 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.'
   )`
 ];
 

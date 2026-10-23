@@ -119,9 +119,23 @@ if (activeMode === 'neon') {
 
 // Neon auto migration if needed
 if (activeMode === 'neon' && neonClient) {
-  neonClient`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_pinned SMALLINT DEFAULT 0;`
-    .then(() => console.log("✅ [DB Neon] Đã đảm bảo cột 'is_pinned' sẵn sàng"))
-    .catch(err => console.warn("⚠️ [DB Neon] Kiểm tra cột is_pinned:", err.message));
+  Promise.allSettled([
+    neonClient`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_pinned SMALLINT DEFAULT 0;`,
+    neonClient`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS team_code VARCHAR(30) DEFAULT 'VAN_THU';`,
+    neonClient`ALTER TABLE standalone_tasks ADD COLUMN IF NOT EXISTS is_pool_hidden SMALLINT DEFAULT 0;`,
+    neonClient`ALTER TABLE consolidated_report_meta ADD COLUMN IF NOT EXISTS ending_note TEXT DEFAULT 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.';`,
+    neonClient`CREATE TABLE IF NOT EXISTS doc_inspection_stats (
+      id TEXT PRIMARY KEY,
+      report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+      department_name TEXT NOT NULL,
+      total_checked INTEGER DEFAULT 0,
+      error_count INTEGER DEFAULT 0,
+      total_pages INTEGER DEFAULT 0,
+      order_index INTEGER DEFAULT 0
+    );`
+  ])
+    .then(() => console.log("✅ [DB Neon] Đã đảm bảo toàn bộ schema (ending_note, team_code, is_pool_hidden, doc_inspection_stats) sẵn sàng"))
+    .catch(err => console.warn("⚠️ [DB Neon] Schema auto migration:", err.message));
 }
 
 export const db = {
