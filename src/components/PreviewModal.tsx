@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { X, FileSpreadsheet, Printer, ShieldCheck, CheckCircle2 } from 'lucide-react';
-import { TaskTable1, TaskTable2, ReportMetadata, processTable1, processTable2, formatNgayLap } from '../utils/reportUtils';
+import { TaskTable1, TaskTable2, ReportMetadata, processTable1, processTable2, formatNgayLap, getWeekDates } from '../utils/reportUtils';
 import { DocInspectionStatItem, ConsolidatedReportMetaItem } from './DocInspectionModal';
 
 export interface ReportSignatureItem {
@@ -374,12 +374,35 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
             {/* TIÊU ĐỀ BÁO CÁO */}
             <div className="text-center mb-6">
               <div className="font-bold text-[14pt] uppercase">BÁO CÁO</div>
-              <div className="font-bold text-[13pt] mt-1">
-                Kết quả thực hiện nhiệm vụ Tuần {metadata.tuan} trọng tâm công tác Tuần {metadata.tuan_tiep}
-              </div>
-              <div className="font-bold text-[13pt] mt-1">
-                Kính gửi: Chánh Văn Phòng.
-              </div>
+              {isConsolidated ? (
+                <>
+                  <div className="font-bold text-[13pt] mt-1">
+                    Kết quả thực hiện nhiệm vụ Tuần {metadata.tuan} trọng tâm công tác Tuần {metadata.tuan_tiep}
+                  </div>
+                  <div className="font-bold text-[13pt] mt-1">
+                    Kính gửi: {metadata.kinh_gui || 'Chánh Văn Phòng.'}
+                  </div>
+                </>
+              ) : (
+                (() => {
+                  const fallbackDates = getWeekDates(metadata.tuan || 42, metadata.nam || 2026);
+                  const tuNgay = metadata.tu_ngay || fallbackDates.tu_ngay;
+                  const denNgay = metadata.den_ngay || fallbackDates.den_ngay;
+                  return (
+                    <>
+                      <div className="font-bold text-[13pt] mt-1">
+                        Kết quả thực hiện nhiệm vụ Tuần: {metadata.tuan} (Từ ngày {tuNgay} đến ngày {denNgay})
+                      </div>
+                      <div className="font-bold text-[13pt] mt-0.5">
+                        trọng tâm công tác Tuần {metadata.tuan_tiep}
+                      </div>
+                      <div className="font-bold text-[13pt] mt-1">
+                        Kính gửi: {metadata.kinh_gui || 'Phó Chánh Văn Phòng.'}
+                      </div>
+                    </>
+                  );
+                })()
+              )}
             </div>
 
             {/* LỜI MỞ ĐẦU */}
@@ -513,44 +536,56 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                   ) : (
                     <>
                       {/* BÁO CÁO ĐƠN */}
-                      {p1.thuongXuyen.length > 0 && (
-                        <>
-                          <tr className="bg-slate-50">
-                            <td className="border border-black px-2 py-1 text-center font-bold">I</td>
-                            <td colSpan={4} className="border border-black px-2 py-1 font-bold italic">
-                              Nhiệm vụ thường xuyên (<span className="font-bold px-1">{p1.txStats.done}</span> / {p1.txStats.total} Nhiệm vụ hoàn thành/tổng số nhiệm vụ được giao trong tuần)
-                            </td>
+                      <tr className="bg-slate-50">
+                        <td className="border border-black px-2 py-1 text-center font-bold">I</td>
+                        <td colSpan={4} className="border border-black px-2 py-1 font-bold italic">
+                          Nhiệm vụ thường xuyên (<span className="font-bold px-1">{p1.txStats.done}</span> / {p1.txStats.total} Nhiệm vụ hoàn thành/tổng số nhiệm vụ được giao trong tuần)
+                        </td>
+                      </tr>
+                      {p1.thuongXuyen.length > 0 ? (
+                        p1.thuongXuyen.map(row => (
+                          <tr key={row.id}>
+                            <td className="border border-black px-2 py-1 text-center">{row.stt}</td>
+                            <td className="border border-black px-2 py-1">{row.noi_dung}</td>
+                            <td className="border border-black px-2 py-1 text-center">{row.thoi_gian}</td>
+                            <td className="border border-black px-2 py-1">{row.trien_khai}</td>
+                            <td className="border border-black px-2 py-1 text-center">{row.tien_do}</td>
                           </tr>
-                          {p1.thuongXuyen.map(row => (
-                            <tr key={row.id}>
-                              <td className="border border-black px-2 py-1 text-center">{row.stt}</td>
-                              <td className="border border-black px-2 py-1">{row.noi_dung}</td>
-                              <td className="border border-black px-2 py-1 text-center">{row.thoi_gian}</td>
-                              <td className="border border-black px-2 py-1">{row.trien_khai}</td>
-                              <td className="border border-black px-2 py-1 text-center">{row.tien_do}</td>
-                            </tr>
-                          ))}
-                        </>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="border border-black px-2 py-1 text-center">...</td>
+                          <td className="border border-black px-2 py-1">......</td>
+                          <td className="border border-black px-2 py-1 text-center">.......</td>
+                          <td className="border border-black px-2 py-1">.......</td>
+                          <td className="border border-black px-2 py-1 text-center">........</td>
+                        </tr>
                       )}
 
-                      {p1.dotXuat.length > 0 && (
-                        <>
-                          <tr className="bg-slate-50">
-                            <td className="border border-black px-2 py-1 text-center font-bold">II</td>
-                            <td colSpan={4} className="border border-black px-2 py-1 font-bold italic">
-                              Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản…) (<span className="font-bold px-1">{p1.dxStats.done}</span>/{p1.dxStats.total} Nhiệm vụ, công văn hoàn thành/tổng số nhiệm vụ, công văn được giao trong tuần)
-                            </td>
+                      <tr className="bg-slate-50">
+                        <td className="border border-black px-2 py-1 text-center font-bold">II</td>
+                        <td colSpan={4} className="border border-black px-2 py-1 font-bold italic">
+                          Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản...) (<span className="font-bold px-1">{p1.dxStats.done}</span>/{p1.dxStats.total} Nhiệm vụ, công văn hoàn thành/tổng số nhiệm vụ, công văn được giao trong tuần)
+                        </td>
+                      </tr>
+                      {p1.dotXuat.length > 0 ? (
+                        p1.dotXuat.map(row => (
+                          <tr key={row.id}>
+                            <td className="border border-black px-2 py-1 text-center">{row.stt}</td>
+                            <td className="border border-black px-2 py-1">{row.noi_dung}</td>
+                            <td className="border border-black px-2 py-1 text-center">{row.thoi_gian}</td>
+                            <td className="border border-black px-2 py-1">{row.trien_khai}</td>
+                            <td className="border border-black px-2 py-1 text-center">{row.tien_do}</td>
                           </tr>
-                          {p1.dotXuat.map(row => (
-                            <tr key={row.id}>
-                              <td className="border border-black px-2 py-1 text-center">{row.stt}</td>
-                              <td className="border border-black px-2 py-1">{row.noi_dung}</td>
-                              <td className="border border-black px-2 py-1 text-center">{row.thoi_gian}</td>
-                              <td className="border border-black px-2 py-1">{row.trien_khai}</td>
-                              <td className="border border-black px-2 py-1 text-center">{row.tien_do}</td>
-                            </tr>
-                          ))}
-                        </>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="border border-black px-2 py-1 text-center">...</td>
+                          <td className="border border-black px-2 py-1">......</td>
+                          <td className="border border-black px-2 py-1 text-center">.......</td>
+                          <td className="border border-black px-2 py-1">.......</td>
+                          <td className="border border-black px-2 py-1 text-center">........</td>
+                        </tr>
                       )}
                     </>
                   )}
@@ -693,29 +728,47 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                           Nhiệm vụ thường xuyên
                         </td>
                       </tr>
-                      {p2.thuongXuyen.map(row => (
-                        <tr key={row.id}>
-                          <td className="border border-black px-2 py-1 text-center">{row.stt}</td>
-                          <td className="border border-black px-2 py-1">{row.noi_dung}</td>
-                          <td className="border border-black px-2 py-1 text-center">{row.thoi_gian_du_kien}</td>
-                          <td className="border border-black px-2 py-1">{row.san_pham_du_kien}</td>
+                      {p2.thuongXuyen.length > 0 ? (
+                        p2.thuongXuyen.map(row => (
+                          <tr key={row.id}>
+                            <td className="border border-black px-2 py-1 text-center">{row.stt}</td>
+                            <td className="border border-black px-2 py-1">{row.noi_dung}</td>
+                            <td className="border border-black px-2 py-1 text-center">{row.thoi_gian_du_kien}</td>
+                            <td className="border border-black px-2 py-1">{row.san_pham_du_kien}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="border border-black px-2 py-1 text-center">...</td>
+                          <td className="border border-black px-2 py-1">......</td>
+                          <td className="border border-black px-2 py-1 text-center">.......</td>
+                          <td className="border border-black px-2 py-1">........</td>
                         </tr>
-                      ))}
+                      )}
 
                       <tr className="bg-slate-50">
                         <td className="border border-black px-2 py-1 text-center font-bold">II</td>
                         <td colSpan={3} className="border border-black px-2 py-1 font-bold">
-                          Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản…)
+                          Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản...)
                         </td>
                       </tr>
-                      {p2.dotXuat.map(row => (
-                        <tr key={row.id}>
-                          <td className="border border-black px-2 py-1 text-center">{row.stt}</td>
-                          <td className="border border-black px-2 py-1">{row.noi_dung}</td>
-                          <td className="border border-black px-2 py-1 text-center">{row.thoi_gian_du_kien}</td>
-                          <td className="border border-black px-2 py-1">{row.san_pham_du_kien}</td>
+                      {p2.dotXuat.length > 0 ? (
+                        p2.dotXuat.map(row => (
+                          <tr key={row.id}>
+                            <td className="border border-black px-2 py-1 text-center">{row.stt}</td>
+                            <td className="border border-black px-2 py-1">{row.noi_dung}</td>
+                            <td className="border border-black px-2 py-1 text-center">{row.thoi_gian_du_kien}</td>
+                            <td className="border border-black px-2 py-1">{row.san_pham_du_kien}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="border border-black px-2 py-1 text-center">...</td>
+                          <td className="border border-black px-2 py-1">......</td>
+                          <td className="border border-black px-2 py-1 text-center">.......</td>
+                          <td className="border border-black px-2 py-1">........</td>
                         </tr>
-                      ))}
+                      )}
                     </>
                   )}
                 </tbody>
@@ -772,28 +825,46 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                 {isConsolidated ? 'IV. Khó khăn, vướng mắc, đề xuất kiến nghị (nếu có):' : 'III. Khó khăn, vướng mắc, đề xuất kiến nghị (nếu có)'}
               </div>
 
+              {!isConsolidated && (
+                <div className="text-[13pt] text-justify leading-relaxed">
+                  - Khó khăn trong quá trình thực hiện nhiệm vụ, đề xuất kiến nghị giải quyết (thời gian thực hiện không kịp tiến độ, xin gia hạn, giải trình......).
+                </div>
+              )}
+
               {/* Nội dung khó khăn, vướng mắc */}
-              {metadata.kho_khan ? (
+              {metadata.kho_khan && metadata.kho_khan.trim() ? (
                 <div className="pl-4 leading-relaxed text-justify text-[13pt] whitespace-pre-wrap">
                   {metadata.kho_khan}
                 </div>
               ) : (
                 isConsolidated ? (
-                  <div className="pl-4 leading-relaxed text-justify text-[13pt] whitespace-pre-wrap">
-                    <div>- Hiện nay, Bộ phận Văn thư – Lưu trữ có 02 chuyên viên đang tham gia lớp đào tạo, bồi dưỡng nghiệp vụ Văn thư – Lưu trữ theo lịch học vào thứ Hai, thứ Tư và thứ Ba, thứ Năm hằng tuần. Do đó, nhân sự thực hiện nhiệm vụ thường xuyên bị phân tán, khối lượng công việc tập trung vào những ngày còn lại, dẫn đến chưa bảo đảm tiến độ thực hiện một số nhiệm vụ được giao.</div>
-                    <div className="mt-1">- Hồ sơ nghiệm thu Hợp đồng cung ứng dịch vụ vận chuyển, vận hành TTC CTRSH của các đơn vị vận chuyển từ đầu năm 2026 đến nay hiện đang được lưu trữ tập trung tại P.KHTC; chưa thực hiện giao nộp hồ sơ về Văn thư để lưu trữ.</div>
-                  </div>
-                ) : (
-                  <div className="pl-4 leading-relaxed text-[13pt] italic text-slate-600">
+                  <div className="pl-4 leading-relaxed text-justify text-[13pt]">
                     Không.
                   </div>
+                ) : (
+                  <div className="pl-4 leading-relaxed text-[13pt] text-slate-700 tracking-wider">
+                    ....................................................................................................................................................
+                  </div>
                 )
+              )}
+
+              {/* Phần Lưu ý theo ảnh 4 cho Báo cáo Đơn */}
+              {!isConsolidated && (
+                <div className="text-[13pt] leading-relaxed text-justify space-y-1.5 pt-1">
+                  <div className="italic">- Lưu ý:</div>
+                  <div className="italic pl-2">
+                    + Nhiệm vụ báo cáo trong tuần: Cập nhật đầy đủ nhiệm vụ được giao trong tuần trước và nhiệm vụ được giao trong báo cáo tiến độ hàng tuần gửi phòng Kế hoạch - Tài chính, báo cáo cần hoàn thiện <span className="font-bold not-italic">trước 11h thứ 4 hàng tuần</span> gửi bộ phận Kế hoạch – Tổng hợp trình lãnh đạo phòng, xem xét chỉ đạo./.
+                  </div>
+                  <div className="italic pl-2">
+                    + Công việc/nhiệm vụ quá thời hạn chưa có kết quả/sản phẩm: Được xem là <span className="font-bold">không trễ hạn</span> nếu thuộc một trong các trường hợp: phát sinh yêu cầu bổ sung của cấp trên; có chỉ đạo chỉnh sửa; hoặc do yếu tố khách quan (luật định sửa đổi, thay đổi hướng dẫn...) đã được Lãnh đạo phòng chấp thuận hoặc phê duyệt gia hạn. Đồng thời nhân sự cần đánh giá tính chất công việc, xác định thời gian hoàn thành hợp lý và tiếp tục thực hiện theo chỉ đạo của Lãnh đạo phòng.
+                  </div>
+                </div>
               )}
 
               {/* Lời kết trình lãnh đạo (dành cho Báo cáo tổng hợp) */}
               {isConsolidated && (
                 <div className="text-justify indent-8 leading-relaxed text-[13pt] mt-3">
-                  {consolidatedMeta?.ending_note || `Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần ${metadata.tuan} và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần ${metadata.tuan_tiep} của Bộ phận Văn thư. Kính trình Lãnh đạo phòng xem xét./.`}
+                  {consolidatedMeta?.ending_note || 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.'}
                 </div>
               )}
             </div>
@@ -852,7 +923,8 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
 
                 {/* Chức danh & Chữ ký */}
                 <div className="text-center min-w-[200px]">
-                  <div className="font-bold uppercase text-[12pt]">NGƯỜI BÁO CÁO</div>
+                  <div className="font-bold text-[13pt]">Người báo cáo</div>
+                  <div className="italic text-[11pt] text-slate-600 dark:text-slate-400 mt-0.5">(Ký và ghi rõ họ tên)</div>
                   {renderSignatureStamp(metadata.nguoi_lap) || <div className="h-20 my-1" />}
                   <div className="font-bold text-[13pt] mt-2">{metadata.nguoi_lap || ''}</div>
                 </div>

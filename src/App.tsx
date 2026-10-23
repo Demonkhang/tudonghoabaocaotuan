@@ -938,7 +938,7 @@ export default function App() {
     setIsLoading(true);
 
     if (reportType === 'CONSOLIDATED_OFFICE') {
-      const masterReportId = metadata.report_id && currentUser?.id && metadata.report_id.includes(currentUser.id) ? metadata.report_id : (currentUser?.id ? `rpt_consolidated_office_${currentUser.id}_w${metadata.tuan}_${metadata.nam}` : `rpt_consolidated_office_w${metadata.tuan}_${metadata.nam}`);
+      const masterReportId = metadata.report_id || (currentUser?.id ? `rpt_consolidated_office_${currentUser.id}_w${metadata.tuan}_${metadata.nam}` : `rpt_consolidated_office_w${metadata.tuan}_${metadata.nam}`);
       const res = await saveConsolidatedReportData({
         metadata: {
           ...metadata,
@@ -953,10 +953,13 @@ export default function App() {
       });
       setIsLoading(false);
       if (res && res.success) {
-        setMetadata(prev => ({ ...prev, report_id: masterReportId }));
+        const finalReportId = res.report_id || masterReportId;
+        setMetadata(prev => ({ ...prev, report_id: finalReportId }));
+        if (res.table1) setTable1(res.table1);
+        if (res.table2) setTable2(res.table2);
         setInitialSnapshot({
-          table1: JSON.parse(JSON.stringify(table1)),
-          table2: JSON.parse(JSON.stringify(table2))
+          table1: JSON.parse(JSON.stringify(res.table1 || table1)),
+          table2: JSON.parse(JSON.stringify(res.table2 || table2))
         });
         setLastSaveUpdatedAt(new Date().toISOString());
         setHasLoadedData(true);

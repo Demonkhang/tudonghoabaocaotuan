@@ -856,10 +856,10 @@ export async function carryOverNextWeek(req, res) {
     for (const t of (routineTable1 || [])) {
       const cleanContent = (t.noi_dung || '').trim().toLowerCase();
       const itemKey = `t1_${t.team_code || 'VAN_THU'}_${cleanContent}`;
-      if (!cleanContent || addedContents.has(itemKey)) return;
+      if (!cleanContent || addedContents.has(itemKey)) continue;
       addedContents.add(itemKey);
 
-      const newId = `co_tx_${t.id}_${Date.now()}`;
+      const newId = `co_tx_${t.id}_${Date.now()}_${newOrderIndex}`;
       const isStarred = t.is_starred !== undefined ? t.is_starred : 1;
       // Đem theo toàn bộ nội dung triển khai thực hiện và sản phẩm từ tuần cũ sang tuần mới
       const finalTrienKhai = t.trien_khai || '';
@@ -888,10 +888,10 @@ export async function carryOverNextWeek(req, res) {
     for (const t of (unfinishedTable1 || [])) {
       const cleanContent = (t.noi_dung || '').trim().toLowerCase();
       const itemKey = `t1_${t.team_code || 'VAN_THU'}_${cleanContent}`;
-      if (!cleanContent || addedContents.has(itemKey)) return;
+      if (!cleanContent || addedContents.has(itemKey)) continue;
       addedContents.add(itemKey);
 
-      const newId = `co_uf_${t.id}_${Date.now()}`;
+      const newId = `co_uf_${t.id}_${Date.now()}_${newOrderIndex}`;
       const isStarred = t.is_starred !== undefined ? t.is_starred : 0;
       const finalTrienKhai = t.trien_khai || '';
       const finalSanPham = t.san_pham || '';
@@ -919,10 +919,10 @@ export async function carryOverNextWeek(req, res) {
     for (const t of (plannedTable2 || [])) {
       const cleanContent = (t.noi_dung || '').trim().toLowerCase();
       const itemKey = `t2_${t.team_code || 'VAN_THU'}_${cleanContent}`;
-      if (!cleanContent || addedContents.has(itemKey)) return;
+      if (!cleanContent || addedContents.has(itemKey)) continue;
       addedContents.add(itemKey);
 
-      const newId = `co_t2_${t.id}_${Date.now()}`;
+      const newId = `co_t2_${t.id}_${Date.now()}_${newOrderIndex}`;
       const isStarred = t.is_starred !== undefined ? t.is_starred : (t.category === 'Thường xuyên' || t.is_recurring ? 1 : 0);
       const finalTrienKhai = t.trien_khai || '';
 
@@ -1453,12 +1453,15 @@ export async function saveConsolidatedReport(req, res) {
     const year = parseInt(metadata.nam || '2026', 10);
     const accId = metadata.account_id || req.query.account_id || 'acc_vp_hoa';
 
-    let existing = await db.prepare("SELECT id FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(accId, week, year);
-    if (!existing && metadata.report_id) {
+    let existing = null;
+    if (metadata.report_id) {
       existing = await db.prepare("SELECT id FROM reports WHERE id = ?").get(metadata.report_id);
     }
+    if (!existing) {
+      existing = await db.prepare("SELECT id FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(accId, week, year);
+    }
 
-    const targetReportId = existing ? existing.id : (metadata.report_id && metadata.report_id.includes(accId) ? metadata.report_id : `rpt_consolidated_office_${accId}_w${week}_${year}`);
+    const targetReportId = existing ? existing.id : (metadata.report_id || `rpt_consolidated_office_${accId}_w${week}_${year}`);
 
     db.exec('BEGIN IMMEDIATE;');
     try {
@@ -1501,7 +1504,7 @@ export async function saveConsolidatedReport(req, res) {
         const stmtDs = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, total_pages, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)');
         for (const [idx, ds] of (doc_inspection_stats || []).entries()) {
           await stmtDs.run(
-            `ds_${targetReportId}_${idx}_${Date.now()}`,
+            `ds_${targetReportId}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             targetReportId,
             ds.department_name || '',
             parseInt(ds.total_checked || '0', 10),
@@ -1519,8 +1522,19 @@ export async function saveConsolidatedReport(req, res) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
+      // Track used IDs to ensure uniqueness within this batch as well as across the database
+      const usedTaskIds = new Set();
+      const existingDbRows = await db.prepare('SELECT id FROM tasks WHERE report_id != ?').all(targetReportId);
+      const otherReportDbIds = new Set(existingDbRows.map(r => r.id));
+
+      const savedTable1 = [];
       for (const [idx, t] of (table1 || []).entries()) {
-        const taskId = (t.id && !t.id.startsWith('t1_init')) ? t.id : `t1_${targetReportId}_${idx}`;
+        let taskId = t.id;
+        if (!taskId || taskId.startsWith('t1_init') || usedTaskIds.has(taskId) || otherReportDbIds.has(taskId)) {
+          taskId = `t1_${targetReportId}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        }
+        usedTaskIds.add(taskId);
+
         await stmtTask.run(
           taskId,
           targetReportId,
@@ -1538,10 +1552,21 @@ export async function saveConsolidatedReport(req, res) {
           t.is_recurring ? 1 : 0,
           t.is_pinned ? 1 : 0
         );
+
+        savedTable1.push({
+          ...t,
+          id: taskId
+        });
       }
 
+      const savedTable2 = [];
       for (const [idx, t] of (table2 || []).entries()) {
-        const taskId = (t.id && !t.id.startsWith('t2_init')) ? t.id : `t2_${targetReportId}_${idx}`;
+        let taskId = t.id;
+        if (!taskId || taskId.startsWith('t2_init') || usedTaskIds.has(taskId) || otherReportDbIds.has(taskId)) {
+          taskId = `t2_${targetReportId}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        }
+        usedTaskIds.add(taskId);
+
         await stmtTask.run(
           taskId,
           targetReportId,
@@ -1559,10 +1584,21 @@ export async function saveConsolidatedReport(req, res) {
           t.is_recurring ? 1 : 0,
           t.is_pinned ? 1 : 0
         );
+
+        savedTable2.push({
+          ...t,
+          id: taskId
+        });
       }
 
       db.exec('COMMIT;');
-      return res.json({ success: true, message: 'Đã lưu Báo cáo tuần tổng hợp Văn phòng thành công!' });
+      return res.json({
+        success: true,
+        message: 'Đã lưu Báo cáo tuần tổng hợp Văn phòng thành công!',
+        report_id: targetReportId,
+        table1: savedTable1,
+        table2: savedTable2
+      });
     } catch (txErr) {
       db.exec('ROLLBACK;');
       throw txErr;

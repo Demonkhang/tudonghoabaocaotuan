@@ -15,22 +15,17 @@ const currentDir = typeof __dirname !== 'undefined'
 export function createDocxReport(data) {
   const templatePath = process.env.TEMPLATE_PATH || path.join(currentDir, '../../templates/report_template.docx');
 
-  let zip;
-  if (fs.existsSync(templatePath)) {
-    const content = fs.readFileSync(templatePath, 'binary');
-    zip = new PizZip(content);
-  } else {
-    zip = createMinimalDocxZip();
+  // Luôn tạo file zip mẫu mới nhất chuẩn thể thức theo mẫu ảnh
+  const zip = createMinimalDocxZip();
 
-    try {
-      const templateDir = path.dirname(templatePath);
-      if (!fs.existsSync(templateDir)) {
-        fs.mkdirSync(templateDir, { recursive: true });
-      }
-      fs.writeFileSync(templatePath, zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' }));
-    } catch (e) {
-      console.warn('Không thể lưu file report_template.docx đĩa:', e.message);
+  try {
+    const templateDir = path.dirname(templatePath);
+    if (!fs.existsSync(templateDir)) {
+      fs.mkdirSync(templateDir, { recursive: true });
     }
+    fs.writeFileSync(templatePath, zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' }));
+  } catch (e) {
+    console.warn('Không thể lưu file report_template.docx đĩa:', e.message);
   }
 
   const doc = new Docxtemplater(zip, {
@@ -92,6 +87,40 @@ export function formatNgayLap(rawDate) {
 
   return `Thành phố Hồ Chí Minh, ${val}`;
 }
+
+/**
+ * Tính ngày bắt đầu (Thứ 2) và ngày kết thúc (Chủ nhật) của Tuần thứ N trong năm
+ */
+export function getWeekDates(weekNumber, year) {
+  try {
+    const y = Number(year) || 2026;
+    const w = Number(weekNumber) || 43;
+    const simple = new Date(y, 0, 1 + (w - 1) * 7);
+    const dayOfWeek = simple.getDay();
+    const ISOweekStart = new Date(simple);
+    const diff = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
+    ISOweekStart.setDate(simple.getDate() + diff);
+
+    const monday = new Date(ISOweekStart);
+    const sunday = new Date(ISOweekStart);
+    sunday.setDate(monday.getDate() + 6);
+
+    const formatDate = (d) => {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const yr = d.getFullYear();
+      return `${day}/${month}/${yr}`;
+    };
+
+    return {
+      tu_ngay: formatDate(monday),
+      den_ngay: formatDate(sunday)
+    };
+  } catch (e) {
+    return { tu_ngay: '...', den_ngay: '...' };
+  }
+}
+
 
 /**
  * Lọc bỏ các dòng tiêu đề / subheader thừa từ file Excel
@@ -320,11 +349,35 @@ export function formatDataForTemplate(data) {
     san_pham_du_kien: item.san_pham_du_kien || item.san_pham || item.sanPham || ''
   }));
 
-  const tx1Done = tx1.filter(t => (t.tien_do || t.tienDo) === 'Hoàn thành').length;
-  const dx1Done = dx1.filter(t => (t.tien_do || t.tienDo) === 'Hoàn thành').length;
+  const isDone = (status) => {
+    if (!status) return false;
+    const s = String(status).toLowerCase();
+    return s.includes('hoàn thành') && !s.includes('chưa') && !s.includes('không');
+  };
+
+  const tx1Done = tx1.filter(t => isDone(t.tien_do || t.tienDo)).length;
+  const dx1Done = dx1.filter(t => isDone(t.tien_do || t.tienDo)).length;
   const totalDone = tx1Done + dx1Done;
   const totalT1 = cleanTable1.length;
   const tileDone = totalT1 > 0 ? Math.round((totalDone / totalT1) * 100) + '%' : '0%';
+
+  const finalTx1List = thuongxuyen_ketqua.length > 0 ? thuongxuyen_ketqua : [
+    { stt: '...', noi_dung: '......', thoi_gian: '.......', trien_khai: '.......', tien_do: '........' }
+  ];
+  const finalDx1List = dotxuat_ketqua.length > 0 ? dotxuat_ketqua : [
+    { stt: '...', noi_dung: '......', thoi_gian: '.......', trien_khai: '.......', tien_do: '........' }
+  ];
+
+  const finalTx2List = thuongxuyen_kehoach.length > 0 ? thuongxuyen_kehoach : [
+    { stt: '...', noi_dung: '......', thoi_gian_du_kien: '.......', san_pham_du_kien: '........' }
+  ];
+  const finalDx2List = dotxuat_kehoach.length > 0 ? dotxuat_kehoach : [
+    { stt: '...', noi_dung: '......', thoi_gian_du_kien: '.......', san_pham_du_kien: '........' }
+  ];
+
+  const weekDates = getWeekDates(metadata.tuan || 42, metadata.nam || 2026);
+  const tu_ngay = metadata.tu_ngay || weekDates.tu_ngay || '...';
+  const den_ngay = metadata.den_ngay || weekDates.den_ngay || '...';
 
   return {
     co_quan_cap_tren: metadata.co_quan_cap_tren || 'BAN QUẢN LÝ CÁC KHU LIÊN HỢP XỬ LÝ CHẤT THẢI THÀNH PHỐ',
@@ -332,29 +385,34 @@ export function formatDataForTemplate(data) {
     nam: metadata.nam || 2026,
     tuan: metadata.tuan || 42,
     tuan_tiep: metadata.tuan_tiep || (metadata.tuan ? metadata.tuan + 1 : 43),
+    tu_ngay,
+    den_ngay,
     ngay_lap: formatNgayLap(metadata.ngay_lap),
     nguoi_lap: metadata.nguoi_lap || '',
-    kho_khan: metadata.kho_khan || 'Không',
+    kinh_gui: metadata.kinh_gui || 'Phó Chánh Văn Phòng.',
+    kho_khan: (metadata.kho_khan && metadata.kho_khan.trim())
+      ? metadata.kho_khan
+      : '....................................................................................................................................................',
 
     tong_nhiem_vu: totalT1,
     hoan_thanh_count: totalDone,
     dang_thuc_hien_count: totalT1 - totalDone,
     tile_hoan_thanh: tileDone,
 
-    thuongxuyen_hoanthanh: `${tx1Done}/${tx1.length}`,
+    thuongxuyen_hoanthanh: `${tx1Done} / ${tx1.length}`,
     dotxuat_hoanthanh: `${dx1Done}/${dx1.length}`,
     thuongxuyen_kehoach_count: tx2.length,
     dotxuat_kehoach_count: dx2.length,
 
-    has_tx1: tx1.length > 0,
-    has_dx1: dx1.length > 0,
-    has_tx2: tx2.length > 0,
-    has_dx2: dx2.length > 0,
+    has_tx1: true,
+    has_dx1: true,
+    has_tx2: true,
+    has_dx2: true,
 
-    thuongxuyen_ketqua,
-    dotxuat_ketqua,
-    thuongxuyen_kehoach,
-    dotxuat_kehoach
+    thuongxuyen_ketqua: finalTx1List,
+    dotxuat_ketqua: finalDx1List,
+    thuongxuyen_kehoach: finalTx2List,
+    dotxuat_kehoach: finalDx2List
   };
 }
 
@@ -418,12 +476,16 @@ export function createMinimalDocxZip() {
       <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="28"/><w:color w:val="000000"/></w:rPr><w:t>BÁO CÁO</w:t></w:r>
     </w:p>
     <w:p>
+      <w:pPr><w:jc w:val="center"/><w:spacing w:after="60"/></w:pPr>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Kết quả thực hiện nhiệm vụ Tuần: {tuan} (Từ ngày {tu_ngay} đến ngày {den_ngay})</w:t></w:r>
+    </w:p>
+    <w:p>
       <w:pPr><w:jc w:val="center"/><w:spacing w:after="160"/></w:pPr>
-      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Kết quả thực hiện nhiệm vụ Tuần {tuan} trọng tâm công tác Tuần {tuan_tiep}</w:t></w:r>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>trọng tâm công tác Tuần {tuan_tiep}</w:t></w:r>
     </w:p>
     <w:p>
       <w:pPr><w:jc w:val="center"/><w:spacing w:after="200"/></w:pPr>
-      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Kính gửi: Chánh Văn Phòng.</w:t></w:r>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Kính gửi: {kinh_gui}</w:t></w:r>
     </w:p>
 
     <!-- KÍNH GỬI & LỜI MỞ ĐẦU -->
@@ -532,7 +594,7 @@ export function createMinimalDocxZip() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:gridSpan w:val="4"/><w:tcW w:w="8755" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/></w:tcPr>
-          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:i/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản…) ({dotxuat_hoanthanh} Nhiệm vụ hoàn thành/tổng số nhiệm vụ được giao trong tuần)</w:t></w:r></w:p>
+          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:i/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản...) ({dotxuat_hoanthanh} Nhiệm vụ, công văn hoàn thành/tổng số nhiệm vụ, công văn được giao trong tuần)</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
 
@@ -563,7 +625,8 @@ export function createMinimalDocxZip() {
     </w:tbl>
 
     <!-- CHÚ THÍCH BẢNG I -->
-    <w:p><w:pPr><w:spacing w:before="120" w:after="40"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>¹ Nêu đầu mục nhiệm vụ mang tính bao quát, tổng thể.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:before="120" w:after="40"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>__________________</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="40"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>¹ Nêu đầu mục nhiệm vụ mang tính bao quát, tổng thể</w:t></w:r></w:p>
     <w:p><w:pPr><w:spacing w:after="40"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>² Các công việc đã triển khai thực hiện liên quan đến nhiệm vụ đã thực hiện trong tuần, kèm sản phẩm cụ thể (nếu có).</w:t></w:r></w:p>
     <w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>³ Đánh giá tiến độ thực hiện công việc: Hoàn thành – đúng hạn, hoàn thành – trễ hạn, đang thực hiện – chưa tới hạn, đang thực hiện – quá hạn.</w:t></w:r></w:p>
 
@@ -660,7 +723,7 @@ export function createMinimalDocxZip() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:gridSpan w:val="3"/><w:tcW w:w="8755" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/></w:tcPr>
-          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản…)</w:t></w:r></w:p>
+          <w:p><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="22"/><w:color w:val="000000"/></w:rPr><w:t>Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản...)</w:t></w:r></w:p>
         </w:tc>
       </w:tr>
 
@@ -687,8 +750,9 @@ export function createMinimalDocxZip() {
     </w:tbl>
 
     <!-- CHÚ THÍCH BẢNG II -->
-    <w:p><w:pPr><w:spacing w:before="120" w:after="40"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>⁴ Nội dung dự kiến thực hiện bao gồm các nhiệm vụ con liên quan đến nhiệm vụ tổng thể, bao quát được giao.</w:t></w:r></w:p>
-    <w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>Sản phẩm dự kiến: Quyết định, Công văn, Phiếu trình, Tờ trình….</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:before="120" w:after="40"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>__________________</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="40"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>⁴ Nội dung dự kiến thực hiện bao gồm các nhiệm vụ con liên quan đến nhiệm vụ tổng thể, bao quát được giao.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="18"/><w:color w:val="000000"/></w:rPr><w:t>Sản phẩm dự kiến: Quyết định, Công văn, Phiếu trình, Tờ trình....</w:t></w:r></w:p>
 
     <!-- SECTION III: KHÓ KHĂN VƯỚNG MẮC -->
     <w:p>
@@ -696,8 +760,28 @@ export function createMinimalDocxZip() {
       <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>III. Khó khăn, vướng mắc, đề xuất kiến nghị (nếu có)</w:t></w:r>
     </w:p>
     <w:p>
-      <w:pPr><w:spacing w:after="240"/><w:ind w:left="360"/></w:pPr>
+      <w:pPr><w:spacing w:after="80"/><w:ind w:firstLine="567"/></w:pPr>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>- Khó khăn trong quá trình thực hiện nhiệm vụ, đề xuất kiến nghị giải quyết (thời gian thực hiện không kịp tiến độ, xin gia hạn, giải trình......).</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:spacing w:after="160"/><w:ind w:firstLine="567"/></w:pPr>
       <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>{kho_khan}</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:spacing w:after="60"/><w:ind w:firstLine="567"/></w:pPr>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:i/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>- Lưu ý:</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:spacing w:after="60"/><w:ind w:firstLine="567"/></w:pPr>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:i/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>+ Nhiệm vụ báo cáo trong tuần: Cập nhật đầy đủ nhiệm vụ được giao trong tuần trước và nhiệm vụ được giao trong báo cáo tiến độ hàng tuần gửi phòng Kế hoạch - Tài chính, báo cáo cần hoàn thiện </w:t></w:r>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:i/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>trước 11h thứ 4 hàng tuần</w:t></w:r>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:i/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t> gửi bộ phận Kế hoạch – Tổng hợp trình lãnh đạo phòng, xem xét chỉ đạo./.</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:spacing w:after="240"/><w:ind w:firstLine="567"/></w:pPr>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:i/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>+ Công việc/nhiệm vụ quá thời hạn chưa có kết quả/sản phẩm: Được xem là </w:t></w:r>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:i/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>không trễ hạn</w:t></w:r>
+      <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:i/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t> nếu thuộc một trong các trường hợp: phát sinh yêu cầu bổ sung của cấp trên; có chỉ đạo chỉnh sửa; hoặc do yếu tố khách quan (luật định sửa đổi, thay đổi hướng dẫn...) đã được Lãnh đạo phòng chấp thuận hoặc phê duyệt gia hạn. Đồng thời nhân sự cần đánh giá tính chất công việc, xác định thời gian hoàn thành hợp lý và tiếp tục thực hiện theo chỉ đạo của Lãnh đạo phòng.</w:t></w:r>
     </w:p>
 
     <!-- NƠI NHẬN VÀ CHỮ KÝ 2 CỘNG BORDER NONE -->
@@ -719,8 +803,8 @@ export function createMinimalDocxZip() {
         </w:tc>
         <w:tc>
           <w:tcPr><w:tcW w:w="4678" w:type="dxa"/></w:tcPr>
-          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>NGƯỜI BÁO CÁO</w:t></w:r></w:p>
-          <w:p><w:pPr><w:spacing w:after="400"/></w:pPr></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Người báo cáo</w:t></w:r></w:p>
+          <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="800"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:i/><w:sz w:val="24"/><w:color w:val="000000"/></w:rPr><w:t>(Ký và ghi rõ họ tên)</w:t></w:r></w:p>
           <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>{nguoi_lap}</w:t></w:r></w:p>
         </w:tc>
       </w:tr>

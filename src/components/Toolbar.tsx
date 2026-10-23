@@ -27,7 +27,7 @@ import {
   Download,
   Settings
 } from 'lucide-react';
-import { ReportMetadata, toInputDate } from '../utils/reportUtils';
+import { ReportMetadata, toInputDate, getWeekDates } from '../utils/reportUtils';
 import { UserProfile } from './LoginModal';
 import { isUserVanThu } from './StandaloneTaskKanbanModal';
 
@@ -219,7 +219,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Tuần</span>
               <select
                 value={metadata.tuan}
-                onChange={(e) => setMetadata(prev => ({ ...prev, tuan: Number(e.target.value), tuan_tiep: Number(e.target.value) + 1 }))}
+                onChange={(e) => {
+                  const newTuan = Number(e.target.value);
+                  const newDates = getWeekDates(newTuan, metadata.nam);
+                  setMetadata(prev => ({
+                    ...prev,
+                    tuan: newTuan,
+                    tuan_tiep: newTuan + 1,
+                    tu_ngay: newDates.tu_ngay,
+                    den_ngay: newDates.den_ngay
+                  }));
+                }}
                 className={`text-xs px-2 py-0.5 rounded-md font-bold cursor-pointer border outline-none ${
                   metadata.tuan === recentlyCreatedWeek
                     ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
@@ -240,7 +250,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight ml-1">Năm</span>
               <select
                 value={metadata.nam}
-                onChange={(e) => setMetadata(prev => ({ ...prev, nam: Number(e.target.value) }))}
+                onChange={(e) => {
+                  const newNam = Number(e.target.value);
+                  const newDates = getWeekDates(metadata.tuan, newNam);
+                  setMetadata(prev => ({
+                    ...prev,
+                    nam: newNam,
+                    tu_ngay: newDates.tu_ngay,
+                    den_ngay: newDates.den_ngay
+                  }));
+                }}
                 className="bg-slate-800 border border-slate-700 rounded-md text-xs px-1.5 py-0.5 font-bold text-slate-100 cursor-pointer"
               >
                 <option value={2024}>2024</option>
@@ -248,6 +267,28 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <option value={2026}>2026</option>
                 <option value={2027}>2027</option>
               </select>
+
+              <div className="h-3 w-px bg-slate-800 mx-0.5" />
+
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Từ:</span>
+              <input
+                type="text"
+                value={metadata.tu_ngay !== undefined ? metadata.tu_ngay : getWeekDates(metadata.tuan, metadata.nam).tu_ngay}
+                onChange={(e) => setMetadata(prev => ({ ...prev, tu_ngay: e.target.value }))}
+                className="bg-slate-800 border border-slate-700 rounded-md text-xs px-1.5 py-0.5 font-semibold text-slate-100 w-22 text-center"
+                placeholder="dd/mm/yyyy"
+                title="Ngày bắt đầu tuần (Thứ 2)"
+              />
+
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Đến:</span>
+              <input
+                type="text"
+                value={metadata.den_ngay !== undefined ? metadata.den_ngay : getWeekDates(metadata.tuan, metadata.nam).den_ngay}
+                onChange={(e) => setMetadata(prev => ({ ...prev, den_ngay: e.target.value }))}
+                className="bg-slate-800 border border-slate-700 rounded-md text-xs px-1.5 py-0.5 font-semibold text-slate-100 w-22 text-center"
+                placeholder="dd/mm/yyyy"
+                title="Ngày kết thúc tuần (Chủ nhật)"
+              />
 
               <div className="h-3 w-px bg-slate-800 mx-0.5" />
 
@@ -826,6 +867,30 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     <span>Mục III Thể Thức & Chữ Ký NĐ30</span>
                   </button>
                 )}
+
+                {/* Khoảng thời gian tuần */}
+                <div className="grid grid-cols-2 gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800/80">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 block mb-0.5">Từ ngày</label>
+                    <input
+                      type="text"
+                      value={metadata.tu_ngay !== undefined ? metadata.tu_ngay : getWeekDates(metadata.tuan, metadata.nam).tu_ngay}
+                      onChange={(e) => setMetadata(prev => ({ ...prev, tu_ngay: e.target.value }))}
+                      placeholder="dd/mm/yyyy"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-100 text-xs text-center focus:ring-1 focus:ring-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 block mb-0.5">Đến ngày</label>
+                    <input
+                      type="text"
+                      value={metadata.den_ngay !== undefined ? metadata.den_ngay : getWeekDates(metadata.tuan, metadata.nam).den_ngay}
+                      onChange={(e) => setMetadata(prev => ({ ...prev, den_ngay: e.target.value }))}
+                      placeholder="dd/mm/yyyy"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-100 text-xs text-center focus:ring-1 focus:ring-cyan-500"
+                    />
+                  </div>
+                </div>
 
                 {/* Ngày lập & Người lập */}
                 <div className="grid grid-cols-2 gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800/80">

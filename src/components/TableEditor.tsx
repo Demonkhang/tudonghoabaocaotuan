@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pencil, Plus, Trash2, ClipboardList, ArrowRight, Eye, Edit3, Paperclip, FileCheck, PenTool, Star, Pin, GripVertical, Check, X, Clock, Building2, ChevronDown, User, ShieldCheck, CheckCircle2 } from 'lucide-react';
-import { TaskTable1, TaskTable2, ReportMetadata, processTable1, processTable2, classifyTask } from '../utils/reportUtils';
+import { TaskTable1, TaskTable2, ReportMetadata, processTable1, processTable2, classifyTask, getWeekDates } from '../utils/reportUtils';
 import { DocInspectionStatItem, ConsolidatedReportMetaItem } from './DocInspectionModal';
 import { ConfirmModal, ConfirmModalProps } from './ConfirmModal';
 
@@ -1396,7 +1396,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
     <section className="col-span-12 lg:col-span-9 h-full min-h-0 overflow-y-auto p-3 sm:p-4 md:p-6 bg-[#f9f9ff] dark:bg-slate-900 space-y-4 sm:space-y-6 scroll-smooth pb-28 lg:pb-36 transition-colors duration-300">
       
       {/* Banner thông báo chế độ Form */}
-      {isConsolidated && (
+      {isConsolidated ? (
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 p-3.5 sm:p-4 rounded-xl border border-blue-500/30 text-white flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
           <div className="flex items-center gap-3">
             <div className={`p-2.5 rounded-lg shrink-0 ${activeTeamCode === 'VAN_THU' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : activeTeamCode === 'CDS' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
@@ -1420,6 +1420,64 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               </p>
             </div>
           </div>
+        </div>
+      ) : (
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 p-3.5 sm:p-4 rounded-xl border border-blue-500/30 text-white flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg shrink-0 bg-blue-500/20 text-blue-400 border border-blue-500/30">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-bold text-sm flex items-center gap-2 flex-wrap">
+                <span>BÁO CÁO TUẦN ĐƠN CÁ NHÂN / PHÒNG BAN (FORM CORE CŨ)</span>
+                <span className="text-[10px] uppercase px-2 py-0.5 rounded font-extrabold bg-blue-500/30 text-blue-200 border border-blue-400/30">
+                  Mẫu Tiêu Chuẩn
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Bản báo cáo tiến độ tuần độc lập cho cá nhân / phòng ban với cấu trúc Bảng I, Bảng II, Mục III &amp; Chú thích quy chuẩn.
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Config Bar for Week Range & Receiver */}
+          {metadata && setMetadata && (
+            <div className="flex flex-wrap items-center gap-2.5 bg-slate-950/80 p-2.5 rounded-xl border border-slate-700/70 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-300">Từ ngày:</span>
+                <input
+                  type="text"
+                  value={metadata.tu_ngay !== undefined ? metadata.tu_ngay : getWeekDates(metadata.tuan || tuan, metadata.nam || nam).tu_ngay}
+                  onChange={(e) => setMetadata(prev => ({ ...prev, tu_ngay: e.target.value }))}
+                  placeholder="dd/mm/yyyy"
+                  className="bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-xs text-slate-100 w-24 text-center font-medium focus:border-cyan-400 outline-none"
+                  title="Từ ngày thực hiện nhiệm vụ (Thứ 2)"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-300">Đến ngày:</span>
+                <input
+                  type="text"
+                  value={metadata.den_ngay !== undefined ? metadata.den_ngay : getWeekDates(metadata.tuan || tuan, metadata.nam || nam).den_ngay}
+                  onChange={(e) => setMetadata(prev => ({ ...prev, den_ngay: e.target.value }))}
+                  placeholder="dd/mm/yyyy"
+                  className="bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-xs text-slate-100 w-24 text-center font-medium focus:border-cyan-400 outline-none"
+                  title="Đến ngày thực hiện nhiệm vụ (Chủ nhật)"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-300">Kính gửi:</span>
+                <input
+                  type="text"
+                  value={metadata.kinh_gui || 'Phó Chánh Văn Phòng.'}
+                  onChange={(e) => setMetadata(prev => ({ ...prev, kinh_gui: e.target.value }))}
+                  placeholder="Người nhận..."
+                  className="bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1 text-xs text-slate-100 w-44 font-medium focus:border-cyan-400 outline-none"
+                  title="Kính gửi cấp trên"
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1452,10 +1510,10 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             <thead className="bg-[#e6e8f0] dark:bg-slate-800/90">
               <tr className="text-xs uppercase text-[#414752] dark:text-slate-300 font-bold border-b border-[#c1c6d4] dark:border-slate-700">
                 <th className="px-4 py-3 w-12 text-center">STT</th>
-                <th className="px-4 py-3">Nội dung nhiệm vụ</th>
-                <th className="px-4 py-3 w-40">Thời gian hoàn thành</th>
-                <th className="px-4 py-3">Triển khai thực hiện</th>
-                <th className="px-4 py-3 w-48">Tiến độ</th>
+                <th className="px-4 py-3">{isConsolidated ? 'Nội dung nhiệm vụ' : 'Nội dung nhiệm vụ/ công tác được giao¹.'}</th>
+                <th className="px-4 py-3 w-40">{isConsolidated ? 'Thời gian hoàn thành' : 'Thời gian được giao hoàn thiện nhiệm vụ'}</th>
+                <th className="px-4 py-3">{isConsolidated ? 'Triển khai thực hiện' : 'Triển khai thực hiện².'}</th>
+                <th className="px-4 py-3 w-48">{isConsolidated ? 'Tiến độ' : 'Tiến độ thực hiện³.'}</th>
                 <th className="px-3 py-3 w-12 text-center">Xóa</th>
               </tr>
             </thead>
@@ -1574,7 +1632,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                     <td colSpan={6} className="px-4 py-2 font-extrabold text-[#005dac] dark:text-blue-300 border-b border-[#c1c6d4] dark:border-slate-700">
                       <div className="flex justify-between items-center">
                         <span>
-                          I. Nhiệm vụ thường xuyên ({p1_active.txStats.done}/{p1_active.txStats.total} nhiệm vụ hoàn thành)
+                          I. Nhiệm vụ thường xuyên ({p1_active.txStats.done} / {p1_active.txStats.total} Nhiệm vụ hoàn thành/tổng số nhiệm vụ được giao trong tuần)
                         </span>
                         <button
                           onClick={() => addTable1Row('Thường xuyên')}
@@ -1592,7 +1650,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                     <td colSpan={6} className="px-4 py-2 font-extrabold text-[#005dac] dark:text-blue-300 border-b border-[#c1c6d4] dark:border-slate-700">
                       <div className="flex justify-between items-center">
                         <span>
-                          II. Nhiệm vụ đột xuất ({p1_active.dxStats.done}/{p1_active.dxStats.total} nhiệm vụ hoàn thành)
+                          II. Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản...) ({p1_active.dxStats.done}/{p1_active.dxStats.total} Nhiệm vụ, công văn hoàn thành/tổng số nhiệm vụ, công văn được giao trong tuần)
                         </span>
                         <button
                           onClick={() => addTable1Row('Đột xuất')}
@@ -1757,6 +1815,16 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             </>
           )}
         </div>
+
+        {/* Chú thích Bảng I cho Báo cáo Đơn */}
+        {!isConsolidated && (
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-[#c1c6d4] dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-1">
+            <div className="w-32 h-[1px] bg-slate-400 dark:bg-slate-600 mb-1.5" />
+            <div>¹ Nêu đầu mục nhiệm vụ mang tính bao quát, tổng thể</div>
+            <div>² Các công việc đã triển khai thực hiện liên quan đến nhiệm vụ đã thực hiện trong tuần, kèm sản phẩm cụ thể (nếu có).</div>
+            <div>³ Đánh giá tiến độ thực hiện công việc: Hoàn thành – đúng hạn, hoàn thành – trễ hạn, đang thực hiện – chưa tới hạn, đang thực hiện – quá hạn.</div>
+          </div>
+        )}
       </div>
 
       {/* ==================== BẢNG II ==================== */}
@@ -1788,9 +1856,9 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             <thead className="bg-[#e6e8f0] dark:bg-slate-800/90">
               <tr className="text-xs uppercase text-[#414752] dark:text-slate-300 font-bold border-b border-[#c1c6d4] dark:border-slate-700">
                 <th className="px-4 py-3 w-12 text-center">STT</th>
-                <th className="px-4 py-3">Nhiệm vụ/Công tác</th>
-                <th className="px-4 py-3 w-40">Thời gian dự kiến</th>
-                <th className="px-4 py-3">Nội dung và sản phẩm dự kiến</th>
+                <th className="px-4 py-3">{isConsolidated ? 'Nhiệm vụ/Công tác' : 'Nhiệm vụ/công tác'}</th>
+                <th className="px-4 py-3 w-44">{isConsolidated ? 'Thời gian dự kiến' : 'Thời gian dự kiến hoàn thành'}</th>
+                <th className="px-4 py-3">{isConsolidated ? 'Nội dung và sản phẩm dự kiến' : 'Nội dung và sản phẩm dự kiến thực hiện⁴.'}</th>
                 <th className="px-3 py-3 w-12 text-center">Xóa</th>
               </tr>
             </thead>
@@ -1924,7 +1992,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                   <tr className="bg-[#fff3ec] dark:bg-amber-950/20">
                     <td colSpan={5} className="px-4 py-2 font-extrabold text-[#ba5b00] dark:text-amber-400 border-b border-[#c1c6d4] dark:border-slate-700">
                       <div className="flex justify-between items-center">
-                        <span>II. Nhiệm vụ đột xuất ({p2_active.dxTotal} kế hoạch)</span>
+                        <span>II. Nhiệm vụ theo bút phê, chỉ đạo đột xuất (cuộc họp, giao ban, Phần mềm quản lý văn bản...) ({p2_active.dxTotal} kế hoạch)</span>
                         <button
                           onClick={() => addTable2Row('Đột xuất')}
                           className="text-xs font-semibold text-[#ba5b00] dark:text-amber-300 bg-white dark:bg-slate-800 px-2.5 py-1 rounded border border-[#ba5b00]/30 dark:border-amber-700/50 hover:bg-[#ba5b00] dark:hover:bg-amber-600 hover:text-white dark:hover:text-white transition-all flex items-center gap-1 cursor-pointer"
@@ -2088,7 +2156,139 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             </>
           )}
         </div>
+
+        {/* Chú thích Bảng II cho Báo cáo Đơn */}
+        {!isConsolidated && (
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-[#c1c6d4] dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-1">
+            <div className="w-32 h-[1px] bg-slate-400 dark:bg-slate-600 mb-1.5" />
+            <div>⁴ Nội dung dự kiến thực hiện bao gồm các nhiệm vụ con liên quan đến nhiệm vụ tổng thể, bao quát được giao.</div>
+            <div>Sản phẩm dự kiến: Quyết định, Công văn, Phiếu trình, Tờ trình....</div>
+          </div>
+        )}
       </div>
+
+      {/* ==================== MỤC III CHO BÁO CÁO ĐƠN (ẢNH 4) ==================== */}
+      {!isConsolidated && (
+        <div className="space-y-6 pt-2">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-[#c1c6d4] dark:border-slate-800 overflow-hidden">
+            <div className="bg-blue-50 dark:bg-slate-800 px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center">
+              <h2 className="font-bold text-base sm:text-lg text-[#001e30] dark:text-blue-300 flex items-center gap-2">
+                <PenTool className="w-5 h-5 text-[#005dac] dark:text-blue-400" />
+                <span>MỤC III: KHÓ KHĂN, VƯỚNG MẮC &amp; ĐỀ XUẤT KIẾN NGHỊ (NẾU CÓ)</span>
+              </h2>
+            </div>
+
+            <div className="p-4 sm:p-6 space-y-5">
+              <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                - Khó khăn trong quá trình thực hiện nhiệm vụ, đề xuất kiến nghị giải quyết (thời gian thực hiện không kịp tiến độ, xin gia hạn, giải trình......).
+              </div>
+
+              <div>
+                <textarea
+                  rows={3}
+                  disabled={isReadOnly}
+                  value={metadata?.kho_khan || ''}
+                  onChange={(e) => {
+                    if (setMetadata) {
+                      setMetadata(prev => ({ ...prev, kho_khan: e.target.value }));
+                    }
+                  }}
+                  placeholder="Nhập nội dung khó khăn, vướng mắc hoặc đề xuất kiến nghị (nếu có)..."
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#005dac] focus:outline-none"
+                />
+              </div>
+
+              {/* Box Lưu ý quy định thời hạn nộp & trễ hạn (Ảnh 4) */}
+              <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl p-4 text-xs sm:text-sm text-amber-950 dark:text-amber-200 space-y-2">
+                <div className="font-bold italic flex items-center gap-1.5 text-amber-900 dark:text-amber-300">
+                  <span>- Lưu ý:</span>
+                </div>
+                <div className="italic pl-2 leading-relaxed">
+                  + <strong>Nhiệm vụ báo cáo trong tuần:</strong> Cập nhật đầy đủ nhiệm vụ được giao trong tuần trước và nhiệm vụ được giao trong báo cáo tiến độ hàng tuần gửi phòng Kế hoạch - Tài chính, báo cáo cần hoàn thiện <span className="font-bold not-italic text-amber-900 dark:text-amber-100">trước 11h thứ 4 hàng tuần</span> gửi bộ phận Kế hoạch – Tổng hợp trình lãnh đạo phòng, xem xét chỉ đạo./.
+                </div>
+                <div className="italic pl-2 leading-relaxed">
+                  + <strong>Công việc/nhiệm vụ quá thời hạn chưa có kết quả/sản phẩm:</strong> Được xem là <span className="font-bold text-amber-900 dark:text-amber-100">không trễ hạn</span> nếu thuộc một trong các trường hợp: phát sinh yêu cầu bổ sung của cấp trên; có chỉ đạo chỉnh sửa; hoặc do yếu tố khách quan (luật định sửa đổi, thay đổi hướng dẫn...) đã được Lãnh đạo phòng chấp thuận hoặc phê duyệt gia hạn. Đồng thời nhân sự cần đánh giá tính chất công việc, xác định thời gian hoàn thành hợp lý và tiếp tục thực hiện theo chỉ đạo của Lãnh đạo phòng.
+                </div>
+              </div>
+
+              {/* Thông tin Kính gửi, Từ ngày, Đến ngày & Người báo cáo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
+                    Từ ngày (Tuần {metadata?.tuan || tuan}):
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={metadata?.tu_ngay !== undefined ? metadata.tu_ngay : getWeekDates(metadata?.tuan || tuan, metadata?.nam || nam).tu_ngay}
+                    onChange={(e) => {
+                      if (setMetadata) {
+                        setMetadata(prev => ({ ...prev, tu_ngay: e.target.value }));
+                      }
+                    }}
+                    placeholder="dd/mm/yyyy"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 text-center focus:ring-2 focus:ring-[#005dac] focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
+                    Đến ngày:
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={metadata?.den_ngay !== undefined ? metadata.den_ngay : getWeekDates(metadata?.tuan || tuan, metadata?.nam || nam).den_ngay}
+                    onChange={(e) => {
+                      if (setMetadata) {
+                        setMetadata(prev => ({ ...prev, den_ngay: e.target.value }));
+                      }
+                    }}
+                    placeholder="dd/mm/yyyy"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 text-center focus:ring-2 focus:ring-[#005dac] focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
+                    Kính gửi:
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={metadata?.kinh_gui || 'Phó Chánh Văn Phòng.'}
+                    onChange={(e) => {
+                      if (setMetadata) {
+                        setMetadata(prev => ({ ...prev, kinh_gui: e.target.value }));
+                      }
+                    }}
+                    placeholder="VD: Phó Chánh Văn Phòng. hoặc Chánh Văn Phòng."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#005dac] focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-tight">
+                    Người báo cáo:
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={metadata?.nguoi_lap || ''}
+                    onChange={(e) => {
+                      if (setMetadata) {
+                        setMetadata(prev => ({ ...prev, nguoi_lap: e.target.value }));
+                      }
+                    }}
+                    placeholder="Họ và tên người báo cáo..."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#005dac] focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ==================== MỤC III & IV (TRỰC TIẾP TRÊN MÀN HÌNH NHẬP LIỆU) ==================== */}
       {(isConsolidated || activeTeamCode === 'VAN_THU') && (

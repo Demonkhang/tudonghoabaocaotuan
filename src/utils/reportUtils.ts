@@ -41,6 +41,10 @@ export interface ReportMetadata {
   don_vi: string;
   co_quan_cap_tren: string;
   ngay_lap: string;
+  tu_ngay?: string;
+  den_ngay?: string;
+  kinh_gui?: string;
+  kho_khan?: string;
 }
 
 export interface ValidationError {
@@ -394,3 +398,35 @@ export function formatNgayLap(rawDate?: string): string {
 
   return `Thành phố Hồ Chí Minh, ${val}`;
 }
+
+/**
+ * Tính ngày bắt đầu (Thứ 2) và ngày kết thúc (Chủ nhật) của Tuần thứ N trong năm
+ */
+export function getWeekDates(weekNumber: number, year: number): { tu_ngay: string; den_ngay: string } {
+  try {
+    const simple = new Date(year, 0, 1 + (weekNumber - 1) * 7);
+    const dayOfWeek = simple.getDay();
+    const ISOweekStart = new Date(simple);
+    const diff = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
+    ISOweekStart.setDate(simple.getDate() + diff);
+
+    const monday = new Date(ISOweekStart);
+    const sunday = new Date(ISOweekStart);
+    sunday.setDate(monday.getDate() + 6);
+
+    const formatDate = (d: Date) => {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const y = d.getFullYear();
+      return `${day}/${month}/${y}`;
+    };
+
+    return {
+      tu_ngay: formatDate(monday),
+      den_ngay: formatDate(sunday)
+    };
+  } catch (e) {
+    return { tu_ngay: '...', den_ngay: '...' };
+  }
+}
+
