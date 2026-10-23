@@ -90,8 +90,8 @@ export function CompletionProofModal({ isOpen, taskTitle, onClose, onConfirm }: 
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[260] p-4 animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-xl w-full text-slate-100 shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[260] p-2 sm:p-4 animate-fadeIn">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-xl w-full text-slate-100 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* HEADER */}
         <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 p-4 border-b border-emerald-900/50 flex items-center justify-between shrink-0">
@@ -118,7 +118,7 @@ export function CompletionProofModal({ isOpen, taskTitle, onClose, onConfirm }: 
         </div>
 
         {/* BODY */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 overflow-y-auto flex-1">
           
           {/* TASK TITLE BOX */}
           <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 text-xs">

@@ -541,6 +541,7 @@ export async function getReportDetail(req, res) {
       file_original_name: t.file_original_name || '',
       nhom: t.category,
       parent_task_id: t.parent_task_id,
+      is_pinned: Boolean(t.is_pinned),
       is_starred: Boolean(t.is_starred),
       is_recurring: Boolean(t.is_recurring),
       isEdited: false
@@ -553,6 +554,7 @@ export async function getReportDetail(req, res) {
       san_pham_du_kien: t.san_pham,
       nhom: t.category,
       parent_task_id: t.parent_task_id,
+      is_pinned: Boolean(t.is_pinned),
       is_starred: Boolean(t.is_starred),
       is_recurring: Boolean(t.is_recurring),
       isEdited: false
@@ -677,8 +679,8 @@ export async function saveReport(req, res) {
       await db.prepare('DELETE FROM tasks WHERE report_id = ?').run(targetReportId);
 
       const stmtTask = db.prepare(`
-        INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index, file_minh_chung, file_original_name, is_starred, is_recurring)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, parent_task_id, order_index, file_minh_chung, file_original_name, is_starred, is_recurring, is_pinned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const [idx, t] of (table1 || []).entries()) {
@@ -704,7 +706,8 @@ export async function saveReport(req, res) {
           t.file_minh_chung || '',
           t.file_original_name || '',
           t.is_starred ? 1 : 0,
-          t.is_recurring ? 1 : 0
+          t.is_recurring ? 1 : 0,
+          t.is_pinned ? 1 : 0
         );
       }
 
@@ -731,7 +734,8 @@ export async function saveReport(req, res) {
           '',
           '',
           t.is_starred ? 1 : 0,
-          t.is_recurring ? 1 : 0
+          t.is_recurring ? 1 : 0,
+          t.is_pinned ? 1 : 0
         );
       }
 
@@ -1392,6 +1396,7 @@ export async function getConsolidatedReportDetail(req, res) {
       nhom: t.category,
       team_code: t.team_code || 'VAN_THU',
       file_minh_chung: t.file_minh_chung || '',
+      is_pinned: Boolean(t.is_pinned),
       is_starred: Boolean(t.is_starred),
       is_recurring: Boolean(t.is_recurring)
     }));
@@ -1405,6 +1410,7 @@ export async function getConsolidatedReportDetail(req, res) {
       san_pham: t.san_pham,
       nhom: t.category,
       team_code: t.team_code || 'VAN_THU',
+      is_pinned: Boolean(t.is_pinned),
       is_starred: Boolean(t.is_starred),
       is_recurring: Boolean(t.is_recurring)
     }));
@@ -1509,8 +1515,8 @@ export async function saveConsolidatedReport(req, res) {
       // 4. Upsert tasks (Clear existing tasks for this consolidated report and any linked sub-reports)
       await db.prepare('DELETE FROM tasks WHERE report_id = ? OR report_id IN (SELECT id FROM reports WHERE parent_consolidated_id = ?)').run(targetReportId, targetReportId);
       const stmtTask = db.prepare(`
-        INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, order_index, team_code, file_minh_chung, is_starred, is_recurring)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO tasks (id, report_id, table_type, category, noi_dung, thoi_gian, trien_khai, tien_do, san_pham, order_index, team_code, file_minh_chung, is_starred, is_recurring, is_pinned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const [idx, t] of (table1 || []).entries()) {
@@ -1529,7 +1535,8 @@ export async function saveConsolidatedReport(req, res) {
           t.team_code || 'VAN_THU',
           t.file_minh_chung || '',
           t.is_starred ? 1 : 0,
-          t.is_recurring ? 1 : 0
+          t.is_recurring ? 1 : 0,
+          t.is_pinned ? 1 : 0
         );
       }
 
@@ -1549,7 +1556,8 @@ export async function saveConsolidatedReport(req, res) {
           t.team_code || 'VAN_THU',
           '',
           t.is_starred ? 1 : 0,
-          t.is_recurring ? 1 : 0
+          t.is_recurring ? 1 : 0,
+          t.is_pinned ? 1 : 0
         );
       }
 

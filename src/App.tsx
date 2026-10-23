@@ -1220,11 +1220,11 @@ export default function App() {
           />
 
           {/* NỘI DUNG CHÍNH (Layout Grid Editor) */}
-          <main className="flex-1 overflow-hidden grid grid-cols-12 gap-0 relative">
+          <main className="flex-1 overflow-y-auto lg:overflow-hidden flex flex-col lg:grid lg:grid-cols-12 gap-0 relative min-h-0">
         {!hasLoadedData ? (
           /* Màn hình khởi tạo chưa có dữ liệu */
-          <div className="col-span-12 flex flex-col items-center justify-center p-8 bg-slate-50/80 dark:bg-slate-950/90 overflow-y-auto transition-colors duration-300">
-            <div className="max-w-4xl w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-8 space-y-6 text-center transition-colors duration-300">
+          <div className="col-span-12 flex flex-col items-center justify-center p-4 sm:p-8 bg-slate-50/80 dark:bg-slate-950/90 overflow-y-auto transition-colors duration-300">
+            <div className="max-w-4xl w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-4 sm:p-8 space-y-6 text-center transition-colors duration-300">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 dark:bg-slate-800 text-[#005dac] dark:text-blue-400 border border-blue-100 dark:border-slate-700 shadow-2xs mb-2">
                 <FileSpreadsheet className="w-8 h-8" />
               </div>

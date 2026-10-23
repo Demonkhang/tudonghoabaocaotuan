@@ -65,6 +65,80 @@ export interface KanbanTaskItem {
 }
 
 export type ColumnId = 'backlog' | 'nextWeek' | 'completed' | 'cancelled' | 'trash';
+export type BacklogSubTab = 'ALL' | 'PLANNED' | 'UNFINISHED' | 'ASSIGNED' | 'RECURRING' | 'TRASH';
+
+// Chuẩn hóa nội dung nhiệm vụ để phát hiện trùng lặp
+export function normalizeTaskText(text: string): string {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/^\[.*?\]\s*/, '')      // Bỏ tiền tố mã số ví dụ [NV-2026-001], [CV-12], [VB-01]
+    .replace(/^[\d+.\-•*]\s*/, '')   // Bỏ đầu dòng 1., -, •
+    .replace(/\s+/g, ' ')           // Rút gọn nhiều khoảng trắng
+    .trim();
+}
+
+export function getSourcePriority(item: KanbanTaskItem): number {
+  // Ưu tiên 1: Kế hoạch Bảng 2 (Table 2) - Cam kết chính thức cho tuần mới
+  if (item.source === 'planned_table2' || item.originalTable === 2) return 100;
+  // Ưu tiên 2: Tồn đọng Bảng 1 (Table 1) - Nhiệm vụ dở dang
+  if (item.source === 'unfinished_table1' || item.originalTable === 1) return 80;
+  // Ưu tiên 3: Nhiệm vụ phân cấp / Lãnh đạo giao
+  if (item.is_directive_task || item.source === 'standalone_assigned') return 60;
+  // Ưu tiên 4: Thường xuyên / Mẫu
+  if (item.is_starred || item.is_recurring) return 40;
+  return 20;
+}
+
+export function deduplicateTasks(items: KanbanTaskItem[]): KanbanTaskItem[] {
+  const map = new Map<string, KanbanTaskItem>();
+
+  for (const item of items) {
+    const key = normalizeTaskText(item.noi_dung);
+    if (!key) {
+      map.set(item.id, item);
+      continue;
+    }
+
+    if (!map.has(key)) {
+      map.set(key, { ...item });
+    } else {
+      const existing = map.get(key)!;
+      const currentPriority = getSourcePriority(item);
+      const existingPriority = getSourcePriority(existing);
+
+      if (currentPriority > existingPriority) {
+        map.set(key, {
+          ...item,
+          is_starred: item.is_starred || existing.is_starred,
+          is_recurring: item.is_recurring || existing.is_recurring,
+          san_pham_du_kien: item.san_pham_du_kien || existing.san_pham_du_kien || '',
+          thoi_gian: item.thoi_gian || existing.thoi_gian || 'Trong tuần',
+          trien_khai: item.trien_khai || existing.trien_khai || '',
+          file_minh_chung: item.file_minh_chung || existing.file_minh_chung || '',
+          file_original_name: item.file_original_name || existing.file_original_name || '',
+          assigner_name: item.assigner_name || existing.assigner_name,
+          task_code: item.task_code || existing.task_code,
+        });
+      } else {
+        map.set(key, {
+          ...existing,
+          is_starred: existing.is_starred || item.is_starred,
+          is_recurring: existing.is_recurring || item.is_recurring,
+          san_pham_du_kien: existing.san_pham_du_kien || item.san_pham_du_kien || '',
+          thoi_gian: existing.thoi_gian || item.thoi_gian || 'Trong tuần',
+          trien_khai: existing.trien_khai || item.trien_khai || '',
+          file_minh_chung: existing.file_minh_chung || item.file_minh_chung || '',
+          file_original_name: existing.file_original_name || item.file_original_name || '',
+          assigner_name: existing.assigner_name || item.assigner_name,
+          task_code: existing.task_code || item.task_code,
+        });
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
 
 interface KanbanPlannerModalProps {
   isOpen: boolean;
@@ -110,7 +184,8 @@ export function KanbanPlannerModal({
 
   // Multi-select & Sub-tab states
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
-  const [backlogSubTab, setBacklogSubTab] = useState<'ALL' | 'RECURRING' | 'ASSIGNED' | 'TRASH'>('ALL');
+  const [backlogSubTab, setBacklogSubTab] = useState<BacklogSubTab>('ALL');
+  const [isDeduplicateActive, setIsDeduplicateActive] = useState<boolean>(true);
   const [starredSubMode, setStarredSubMode] = useState<'WEEKLY' | 'ALL'>('WEEKLY');
   const [deduplicateStars, setDeduplicateStars] = useState<boolean>(true);
 
@@ -554,8 +629,6 @@ export function KanbanPlannerModal({
     setShowConfirmDialog(false);
   }, [isOpen, currentUser?.department_id, table1, table2]);
 
-  if (!isOpen) return null;
-
   const targetWeek = sourceWeek + 1;
   const targetYear = sourceYear;
 
@@ -899,61 +972,130 @@ export function KanbanPlannerModal({
     );
   };
 
+  // Danh sách nhiệm vụ Kho sau khi áp dụng bộ lọc trùng lặp
+  const backlogBaseList = useMemo(() => {
+    return isDeduplicateActive ? deduplicateTasks(columns.backlog) : columns.backlog;
+  }, [columns.backlog, isDeduplicateActive]);
+
+  // Đếm số lượng theo từng nhóm nguồn gốc
+  const plannedBacklogCount = useMemo(() => {
+    return backlogBaseList.filter(item => item.source === 'planned_table2' || item.originalTable === 2).length;
+  }, [backlogBaseList]);
+
+  const unfinishedBacklogCount = useMemo(() => {
+    return backlogBaseList.filter(item =>
+      (item.source === 'unfinished_table1' || item.originalTable === 1) &&
+      item.source !== 'planned_table2' && item.originalTable !== 2
+    ).length;
+  }, [backlogBaseList]);
+
+  const assignedBacklogCount = useMemo(() => {
+    return backlogBaseList.filter(item =>
+      item.is_directive_task ||
+      item.source === 'standalone_assigned' ||
+      Boolean(item.assigner_name) ||
+      Boolean(item.task_code) ||
+      (item.noi_dung && (
+        item.noi_dung.startsWith('[NV-') ||
+        item.noi_dung.startsWith('[SĐ') ||
+        item.noi_dung.startsWith('[CV') ||
+        item.noi_dung.startsWith('[VB') ||
+        item.noi_dung.startsWith('[TB')
+      )) ||
+      item.nhom === 'Phân cấp' ||
+      item.nhom === 'Được giao'
+    ).length;
+  }, [backlogBaseList]);
+
   const rawWeeklyStarredList = useMemo(() => {
-    return columns.backlog.filter(isWeeklyStarredTask);
-  }, [columns.backlog, sourceWeek]);
+    return backlogBaseList.filter(isWeeklyStarredTask);
+  }, [backlogBaseList, sourceWeek]);
 
   const rawWeeklyStarredCount = rawWeeklyStarredList.length;
+
+  const recurringBacklogCount = useMemo(() => {
+    return backlogBaseList.filter(item => item.nhom === 'Thường xuyên' || item.is_recurring || item.is_starred).length;
+  }, [backlogBaseList]);
+
+  const weeklyStarredBacklogCount = useMemo(() => {
+    if (!deduplicateStars) return rawWeeklyStarredCount;
+    const seen = new Set<string>();
+    return rawWeeklyStarredList.filter(item => {
+      const k = normalizeTaskText(item.noi_dung);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    }).length;
+  }, [rawWeeklyStarredList, deduplicateStars, rawWeeklyStarredCount]);
+
+  // Hành động chuyển nhanh toàn bộ nhiệm vụ Kế hoạch Bảng 2 sang Kế hoạch Tuần tới
+  const handleTransferAllPlannedToNextWeek = () => {
+    const plannedItems = backlogBaseList.filter(
+      item => item.source === 'planned_table2' || item.originalTable === 2
+    );
+    if (plannedItems.length === 0) return;
+
+    const plannedIds = new Set(plannedItems.map(i => i.id));
+    setColumns(prev => {
+      const updatedPlanned = plannedItems.map(item => ({
+        ...item,
+        targetTable: 2 as const // Đưa vào Bảng 2 Kế hoạch tuần tới
+      }));
+
+      return {
+        ...prev,
+        backlog: prev.backlog.filter(i => !plannedIds.has(i.id)),
+        nextWeek: [...prev.nextWeek, ...updatedPlanned]
+      };
+    });
+  };
 
   // Filter items by search query & sub-tabs
   const filterItems = (items: KanbanTaskItem[], isBacklog = false) => {
     let filtered = items;
     if (isBacklog) {
-      if (backlogSubTab === 'ALL') {
-        // Tab Tất cả: Hiển thị nhiệm vụ 'Đang thực hiện', nhiệm vụ kế hoạch Table 2, hoặc nhiệm vụ được gắn sao
-        filtered = filtered.filter(item => {
-          const lowerProgress = (item.tien_do || '').toLowerCase().trim();
-          const isInProgress = lowerProgress.includes('đang thực hiện') || lowerProgress.includes('đang triển khai') || (item.source === 'unfinished_table1' && !lowerProgress.includes('hoàn thành'));
-          return isInProgress || item.is_starred || item.source === 'planned_table2' || item.source === 'custom_added' || item.is_directive_task;
-        });
-      } else if (backlogSubTab === 'TRASH') {
+      if (backlogSubTab === 'TRASH') {
         filtered = columns.trash;
-      } else if (backlogSubTab === 'RECURRING') {
-        if (starredSubMode === 'WEEKLY') {
-          filtered = filtered.filter(isWeeklyStarredTask);
-        } else {
+      } else {
+        filtered = backlogBaseList;
+
+        if (backlogSubTab === 'PLANNED') {
+          // 🚀 Chỉ lấy nhiệm vụ từ mục Kế hoạch tuần tiếp theo (Bảng 2)
+          filtered = filtered.filter(item => item.source === 'planned_table2' || item.originalTable === 2);
+        } else if (backlogSubTab === 'UNFINISHED') {
+          // ⏳ Chỉ lấy nhiệm vụ dở dang / tồn đọng từ Bảng 1
+          filtered = filtered.filter(item =>
+            (item.source === 'unfinished_table1' || item.originalTable === 1) &&
+            item.source !== 'planned_table2' && item.originalTable !== 2
+          );
+        } else if (backlogSubTab === 'RECURRING') {
+          // ⭐ Thường xuyên / Lặp lại
+          if (starredSubMode === 'WEEKLY') {
+            filtered = filtered.filter(isWeeklyStarredTask);
+          } else {
+            filtered = filtered.filter(
+              item => item.nhom === 'Thường xuyên' || item.is_recurring || item.is_starred
+            );
+          }
+        } else if (backlogSubTab === 'ASSIGNED') {
+          // 👑 Được giao / Phân cấp
           filtered = filtered.filter(
-            item => item.nhom === 'Thường xuyên' || item.is_recurring || item.is_starred
+            item =>
+              item.is_directive_task ||
+              item.source === 'standalone_assigned' ||
+              Boolean(item.assigner_name) ||
+              Boolean(item.task_code) ||
+              (item.noi_dung && (
+                item.noi_dung.startsWith('[NV-') ||
+                item.noi_dung.startsWith('[SĐ') ||
+                item.noi_dung.startsWith('[CV') ||
+                item.noi_dung.startsWith('[VB') ||
+                item.noi_dung.startsWith('[TB')
+              )) ||
+              item.nhom === 'Phân cấp' ||
+              item.nhom === 'Được giao'
           );
         }
-
-        // LỌC TRÙNG TÊN SAO (NẾU BẬT BỘ LỌC)
-        if (deduplicateStars) {
-          const seenKeys = new Set<string>();
-          filtered = filtered.filter(item => {
-            const k = item.noi_dung.toLowerCase().trim();
-            if (seenKeys.has(k)) return false;
-            seenKeys.add(k);
-            return true;
-          });
-        }
-      } else if (backlogSubTab === 'ASSIGNED') {
-        filtered = filtered.filter(
-          item =>
-            item.is_directive_task ||
-            item.source === 'standalone_assigned' ||
-            Boolean(item.assigner_name) ||
-            Boolean(item.task_code) ||
-            (item.noi_dung && (
-              item.noi_dung.startsWith('[NV-') ||
-              item.noi_dung.startsWith('[SĐ') ||
-              item.noi_dung.startsWith('[CV') ||
-              item.noi_dung.startsWith('[VB') ||
-              item.noi_dung.startsWith('[TB')
-            )) ||
-            item.nhom === 'Phân cấp' ||
-            item.nhom === 'Được giao'
-        );
       }
     }
     if (!searchQuery.trim()) return filtered;
@@ -978,47 +1120,7 @@ export function KanbanPlannerModal({
     }
   };
 
-  const recurringBacklogCount = useMemo(() => {
-    const list = columns.backlog.filter(
-      item => item.nhom === 'Thường xuyên' || item.is_recurring || item.is_starred
-    );
-    if (!deduplicateStars) return list.length;
-    const seen = new Set<string>();
-    return list.filter(item => {
-      const k = item.noi_dung.toLowerCase().trim();
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    }).length;
-  }, [columns.backlog, deduplicateStars]);
-
-  const weeklyStarredBacklogCount = useMemo(() => {
-    if (!deduplicateStars) return rawWeeklyStarredCount;
-    const seen = new Set<string>();
-    return rawWeeklyStarredList.filter(item => {
-      const k = item.noi_dung.toLowerCase().trim();
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    }).length;
-  }, [rawWeeklyStarredList, deduplicateStars, rawWeeklyStarredCount]);
-
-  const assignedBacklogCount = columns.backlog.filter(
-    item =>
-      item.is_directive_task ||
-      item.source === 'standalone_assigned' ||
-      Boolean(item.assigner_name) ||
-      Boolean(item.task_code) ||
-      (item.noi_dung && (
-        item.noi_dung.startsWith('[NV-') ||
-        item.noi_dung.startsWith('[SĐ') ||
-        item.noi_dung.startsWith('[CV') ||
-        item.noi_dung.startsWith('[VB') ||
-        item.noi_dung.startsWith('[TB')
-      )) ||
-      item.nhom === 'Phân cấp' ||
-      item.nhom === 'Được giao'
-  ).length;
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[200] p-2 sm:p-4 animate-fadeIn">
@@ -1170,7 +1272,7 @@ export function KanbanPlannerModal({
         </div>
 
         {/* MAIN KANBAN BOARD CONTAINER */}
-        <div className="flex-1 p-3 sm:p-5 grid grid-cols-1 md:grid-cols-4 gap-3 sm:gap-4 overflow-hidden bg-slate-950/60">
+        <div className="flex-1 p-3 sm:p-5 grid grid-cols-1 md:grid-cols-4 gap-3 sm:gap-4 overflow-y-auto md:overflow-hidden bg-slate-950/60">
           
           {/* COL 1: KHO NHIỆM VỤ (BACKLOG) WITH SUB-TABS */}
           <KanbanColumn
@@ -1185,66 +1287,140 @@ export function KanbanPlannerModal({
             onDragLeave={handleDragLeave}
             onDrop={e => handleDrop(e, 'backlog')}
             headerExtra={
-              <div className="grid grid-cols-4 gap-1 mt-2 p-1 bg-slate-950/70 rounded-xl border border-slate-800 text-[10px]">
-                <button
-                  onClick={() => setBacklogSubTab('ALL')}
-                  className={`py-1 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
-                    backlogSubTab === 'ALL'
-                      ? 'bg-blue-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Tất cả nhiệm vụ trong kho"
-                >
-                  <ListTodo className="w-3 h-3 shrink-0" />
-                  <span className="truncate">Tất cả ({columns.backlog.length})</span>
-                </button>
-                <button
-                  onClick={() => setBacklogSubTab('RECURRING')}
-                  className={`py-1 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
-                    backlogSubTab === 'RECURRING'
-                      ? 'bg-amber-500 text-slate-950 shadow font-extrabold'
-                      : 'text-amber-400/80 hover:text-amber-300'
-                  }`}
-                  title="Nhiệm vụ lặp lại / Thường xuyên"
-                >
-                  <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
-                  <span className="truncate">Nhiệm vụ sao ({recurringBacklogCount})</span>
-                </button>
-                <button
-                  onClick={() => setBacklogSubTab('ASSIGNED')}
-                  className={`py-1 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
-                    backlogSubTab === 'ASSIGNED'
-                      ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow font-extrabold'
-                      : 'text-amber-300/80 hover:text-amber-200'
-                  }`}
-                  title="Nhiệm vụ phân cấp giao xuống hoặc được giao từ cấp trên"
-                >
-                  <Crown className="w-3 h-3 text-amber-300 shrink-0" />
-                  <span className="truncate">Được giao ({assignedBacklogCount})</span>
-                </button>
-                <button
-                  onClick={() => setBacklogSubTab('TRASH')}
-                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                  onDrop={e => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const taskId = e.dataTransfer.getData('text/plain') || draggedItemId;
-                    if (selectedTaskIds.length > 0 && selectedTaskIds.includes(taskId)) {
-                      handleBatchMoveToTrash();
-                    } else if (taskId) {
-                      handleMoveTaskToTrash(taskId);
-                    }
-                  }}
-                  className={`py-1 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
-                    backlogSubTab === 'TRASH'
-                      ? 'bg-rose-700 text-white shadow font-extrabold ring-1 ring-rose-400'
-                      : 'text-rose-400/80 hover:text-rose-300 hover:bg-rose-950/40'
-                  }`}
-                  title="Kéo thả vào đây hoặc bấm để xem Thùng Rác"
-                >
-                  <Trash2 className="w-3 h-3 text-rose-400 shrink-0" />
-                  <span className="truncate">Thùng rác ({columns.trash.length})</span>
-                </button>
+              <div className="flex flex-col gap-1.5 mt-2 p-1.5 bg-slate-950/80 rounded-xl border border-slate-800 text-[10px]">
+                {/* DÒNG 1: TOGGLE BẬT/TẮT LỌC TRÙNG LẶP */}
+                <div className="flex items-center justify-between gap-1 pb-1 border-b border-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={() => setIsDeduplicateActive(prev => !prev)}
+                    className={`py-1 px-2 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                      isDeduplicateActive
+                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900/60 shadow-xs'
+                        : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                    }`}
+                    title="Bật/Tắt tính năng tự động gom các nhiệm vụ trùng lặp nội dung"
+                  >
+                    <Filter className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span>Lọc trùng: <strong className={isDeduplicateActive ? "text-emerald-400" : "text-slate-400"}>{isDeduplicateActive ? "BẬT" : "TẮT"}</strong></span>
+                    <span className="px-1.5 py-0.2 rounded bg-slate-900 text-[9px] font-mono border border-slate-700">
+                      {backlogBaseList.length}/{columns.backlog.length}
+                    </span>
+                  </button>
+
+                  <span className="text-[10px] text-slate-400 italic truncate max-w-[150px]">
+                    {isDeduplicateActive ? "✓ Đã gộp nhiệm vụ trùng" : "Hiển thị thô"}
+                  </span>
+                </div>
+
+                {/* DÒNG 2: BỘ LỌC PHÂN ĐỊNH NGUỒN GỐC (SUB-TABS) */}
+                <div className="grid grid-cols-3 gap-1 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setBacklogSubTab('ALL')}
+                    className={`py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
+                      backlogSubTab === 'ALL'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200 bg-slate-900/60'
+                    }`}
+                    title="Tất cả nhiệm vụ trong kho"
+                  >
+                    <ListTodo className="w-3 h-3 shrink-0" />
+                    <span className="truncate">Tất cả ({backlogBaseList.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBacklogSubTab('PLANNED')}
+                    className={`py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
+                      backlogSubTab === 'PLANNED'
+                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow ring-1 ring-blue-400 font-extrabold'
+                        : 'text-blue-400/90 hover:text-blue-300 bg-blue-950/30 border border-blue-900/40'
+                    }`}
+                    title="Nhiệm vụ từ mục Kế hoạch tuần tiếp theo (Bảng 2) của báo cáo trước"
+                  >
+                    <Sparkles className="w-3 h-3 text-blue-300 shrink-0" />
+                    <span className="truncate">🚀 Kế hoạch B2 ({plannedBacklogCount})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBacklogSubTab('UNFINISHED')}
+                    className={`py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
+                      backlogSubTab === 'UNFINISHED'
+                        ? 'bg-amber-600 text-white shadow ring-1 ring-amber-400 font-extrabold'
+                        : 'text-amber-400/90 hover:text-amber-300 bg-amber-950/30 border border-amber-900/40'
+                    }`}
+                    title="Nhiệm vụ dở dang / chưa hoàn thành từ Bảng 1"
+                  >
+                    <Clock className="w-3 h-3 text-amber-300 shrink-0" />
+                    <span className="truncate">⏳ Tồn đọng B1 ({unfinishedBacklogCount})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBacklogSubTab('ASSIGNED')}
+                    className={`py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
+                      backlogSubTab === 'ASSIGNED'
+                        ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow font-extrabold'
+                        : 'text-amber-300/80 hover:text-amber-200 bg-slate-900/60'
+                    }`}
+                    title="Nhiệm vụ phân cấp giao xuống hoặc được giao từ cấp trên"
+                  >
+                    <Crown className="w-3 h-3 text-amber-300 shrink-0" />
+                    <span className="truncate">👑 Được giao ({assignedBacklogCount})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBacklogSubTab('RECURRING')}
+                    className={`py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
+                      backlogSubTab === 'RECURRING'
+                        ? 'bg-purple-600 text-white shadow font-extrabold'
+                        : 'text-purple-400/80 hover:text-purple-300 bg-slate-900/60'
+                    }`}
+                    title="Nhiệm vụ lặp lại / Thường xuyên"
+                  >
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                    <span className="truncate">⭐ Thường xuyên ({recurringBacklogCount})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBacklogSubTab('TRASH')}
+                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const taskId = e.dataTransfer.getData('text/plain') || draggedItemId;
+                      if (selectedTaskIds.length > 0 && selectedTaskIds.includes(taskId)) {
+                        handleBatchMoveToTrash();
+                      } else if (taskId) {
+                        handleMoveTaskToTrash(taskId);
+                      }
+                    }}
+                    className={`py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
+                      backlogSubTab === 'TRASH'
+                        ? 'bg-rose-700 text-white shadow font-extrabold ring-1 ring-rose-400'
+                        : 'text-rose-400/80 hover:text-rose-300 hover:bg-rose-950/40 bg-slate-900/60'
+                    }`}
+                    title="Kéo thả vào đây hoặc bấm để xem Thùng Rác"
+                  >
+                    <Trash2 className="w-3 h-3 text-rose-400 shrink-0" />
+                    <span className="truncate">🗑️ Thùng rác ({columns.trash.length})</span>
+                  </button>
+                </div>
+
+                {/* NÚT THAO TÁC NHANH: CHUYỂN TẤT CẢ KẾ HOẠCH BẢNG 2 SANG TUẦN TỚI */}
+                {backlogSubTab === 'PLANNED' && plannedBacklogCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleTransferAllPlannedToNextWeek}
+                    className="w-full mt-0.5 py-1.5 px-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-400 text-white font-extrabold text-[11px] rounded-lg shadow-lg border border-blue-400/50 flex items-center justify-center gap-1.5 cursor-pointer transition-all animate-bounceIn"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                    <span>⚡ Chuyển tất cả ({plannedBacklogCount}) Kế hoạch sang Tuần Tới</span>
+                  </button>
+                )}
               </div>
             }
           >
@@ -1437,7 +1613,11 @@ export function KanbanPlannerModal({
               <EmptyColPlaceholder
                 text={
                   backlogSubTab === 'TRASH'
-                    ? 'Thùng rác trống. Các nhiệm vụ lặp lại ⭐ hoặc nhiệm vụ bị xóa sẽ xuất hiện ở đây.'
+                    ? 'Thùng rác trống. Các nhiệm vụ bị xóa sẽ xuất hiện ở đây.'
+                    : backlogSubTab === 'PLANNED'
+                    ? 'Không có nhiệm vụ nào từ Kế hoạch tuần tiếp theo (Bảng 2) của báo cáo trước.'
+                    : backlogSubTab === 'UNFINISHED'
+                    ? 'Không có nhiệm vụ tồn đọng / dở dang nào từ Bảng 1.'
                     : backlogSubTab === 'RECURRING'
                     ? 'Chưa có nhiệm vụ thường xuyên / lặp lại nào được đánh dấu ⭐'
                     : backlogSubTab === 'ASSIGNED'
@@ -2023,9 +2203,25 @@ function KanbanTaskCard({
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Origin Badge: Planned Table 2 */}
+          {(item.source === 'planned_table2' || item.originalTable === 2) && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/25 text-blue-300 border border-blue-500/40 flex items-center gap-1 shrink-0 shadow-xs" title="Nhiệm vụ từ mục Kế hoạch tuần tiếp theo (Bảng 2) của báo cáo trước">
+              <Sparkles className="w-3 h-3 text-blue-300 shrink-0" />
+              <span>Kế hoạch B2</span>
+            </span>
+          )}
+
+          {/* Origin Badge: Unfinished Table 1 */}
+          {((item.source === 'unfinished_table1' || item.originalTable === 1) && item.source !== 'planned_table2' && item.originalTable !== 2) && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-300 border border-amber-500/40 flex items-center gap-1 shrink-0 shadow-xs" title="Nhiệm vụ dở dang / tồn đọng từ Bảng 1">
+              <Clock className="w-3 h-3 text-amber-300 shrink-0" />
+              <span>Tồn đọng B1</span>
+            </span>
+          )}
+
           {isDirectiveTask && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1" title="Nhiệm vụ phân cấp giao xuống hoặc được giao">
-              <Crown className="w-3 h-3 text-amber-400 shrink-0" />
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1" title="Nhiệm vụ phân cấp giao xuống hoặc được giao">
+              <Crown className="w-3 h-3 text-emerald-400 shrink-0" />
               <span>Được giao</span>
             </span>
           )}

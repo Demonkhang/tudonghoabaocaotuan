@@ -189,6 +189,10 @@ function isRoutineTime(timeStr) {
     lower.includes('thuong xuyen') ||
     lower.includes('trong tuần') ||
     lower.includes('trong tuan') ||
+    lower.includes('hàng tuần') ||
+    lower.includes('hang tuan') ||
+    lower.includes('định kỳ') ||
+    lower.includes('dinh ky') ||
     lower.includes('chưa nhập') ||
     lower === ''
   ) {
@@ -213,6 +217,13 @@ function parseVietDate(str) {
 
 function sortTasksByTime(tasks) {
   return [...tasks].sort((a, b) => {
+    // 1. Ghim trọng tâm / Trục trọng tâm mặc định lên trên cùng
+    const pinA = Boolean(a.is_pinned || a.isPinned || a.is_focus);
+    const pinB = Boolean(b.is_pinned || b.isPinned || b.is_focus);
+    if (pinA && !pinB) return -1;
+    if (!pinA && pinB) return 1;
+
+    // 2. Cái nào là thường xuyên thì đưa xuống dưới
     const timeA = a.thoi_gian || a.thoi_gian_du_kien || a.thoiGian || '';
     const timeB = b.thoi_gian || b.thoi_gian_du_kien || b.thoiGian || '';
 
@@ -222,6 +233,7 @@ function sortTasksByTime(tasks) {
     if (!routineA && routineB) return -1;
     if (routineA && !routineB) return 1;
 
+    // 3. Sắp xếp theo ngày tăng dần nếu cả 2 có ngày cụ thể
     if (!routineA && !routineB) {
       const dateA = parseVietDate(timeA);
       const dateB = parseVietDate(timeB);
@@ -824,15 +836,15 @@ export function createConsolidatedOfficeDocx(data) {
     ? data.table2.filter(t => t && getNoiDung(t).trim().length > 0 && !isIgnoredRow(getNoiDung(t)))
     : [];
 
-  const t1_vt_tx = t1.filter(t => isVT(t) && !isDotXuat(t.nhom, getNoiDung(t)));
-  const t1_cds_tx = t1.filter(t => isCDS(t) && !isDotXuat(t.nhom, getNoiDung(t)));
-  const t1_vt_dx = t1.filter(t => isVT(t) && isDotXuat(t.nhom, getNoiDung(t)));
-  const t1_cds_dx = t1.filter(t => isCDS(t) && isDotXuat(t.nhom, getNoiDung(t)));
+  const t1_vt_tx = sortTasksByTime(t1.filter(t => isVT(t) && !isDotXuat(t.nhom, getNoiDung(t))));
+  const t1_cds_tx = sortTasksByTime(t1.filter(t => isCDS(t) && !isDotXuat(t.nhom, getNoiDung(t))));
+  const t1_vt_dx = sortTasksByTime(t1.filter(t => isVT(t) && isDotXuat(t.nhom, getNoiDung(t))));
+  const t1_cds_dx = sortTasksByTime(t1.filter(t => isCDS(t) && isDotXuat(t.nhom, getNoiDung(t))));
 
-  const t2_vt_tx = t2.filter(t => isVT(t) && !isDotXuat(t.nhom, getNoiDung(t)));
-  const t2_cds_tx = t2.filter(t => isCDS(t) && !isDotXuat(t.nhom, getNoiDung(t)));
-  const t2_vt_dx = t2.filter(t => isVT(t) && isDotXuat(t.nhom, getNoiDung(t)));
-  const t2_cds_dx = t2.filter(t => isCDS(t) && isDotXuat(t.nhom, getNoiDung(t)));
+  const t2_vt_tx = sortTasksByTime(t2.filter(t => isVT(t) && !isDotXuat(t.nhom, getNoiDung(t))));
+  const t2_cds_tx = sortTasksByTime(t2.filter(t => isCDS(t) && !isDotXuat(t.nhom, getNoiDung(t))));
+  const t2_vt_dx = sortTasksByTime(t2.filter(t => isVT(t) && isDotXuat(t.nhom, getNoiDung(t))));
+  const t2_cds_dx = sortTasksByTime(t2.filter(t => isCDS(t) && isDotXuat(t.nhom, getNoiDung(t))));
 
   const has_t1_vt_tx = t1_vt_tx.length > 0;
   const has_t1_cds_tx = t1_cds_tx.length > 0;

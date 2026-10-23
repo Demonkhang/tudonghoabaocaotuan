@@ -22,7 +22,10 @@ import {
   Sliders,
   Menu,
   X,
-  FileDown
+  FileDown,
+  Zap,
+  Download,
+  Settings
 } from 'lucide-react';
 import { ReportMetadata, toInputDate } from '../utils/reportUtils';
 import { UserProfile } from './LoginModal';
@@ -111,6 +114,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isDataMenuOpen, setIsDataMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileMenuTab, setMobileMenuTab] = useState<'actions' | 'export' | 'settings'>('actions');
 
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const dataMenuRef = useRef<HTMLDivElement>(null);
@@ -595,132 +599,271 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
 
-        {/* COLLAPSIBLE MOBILE MENU DRAWER */}
+        {/* COLLAPSIBLE STREAMLINED MOBILE MENU DRAWER */}
         {isMobileMenuOpen && (
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-3 animate-in slide-in-from-top-2 duration-200">
-            {/* Form & Team View Mobile */}
-            {onOpenReportChoice && (
-              <div className="flex items-center justify-between bg-slate-900 p-2 rounded-lg border border-slate-800">
-                <span className="text-xs font-semibold text-slate-300">Loại Báo Cáo:</span>
+          <div className="bg-slate-950/95 backdrop-blur-xl border border-slate-800/90 rounded-2xl p-2.5 sm:p-3 space-y-2.5 shadow-2xl animate-in slide-in-from-top-2 duration-200">
+            {/* 1. Quick Team Switcher (when NĐ30) */}
+            {reportType === 'CONSOLIDATED_OFFICE' && onSelectTeamCode && (
+              <div className="flex items-center gap-1 bg-slate-900/90 p-1 border border-slate-800 rounded-xl">
+                <span className="text-[10px] font-bold text-slate-400 px-1.5 uppercase tracking-wider">Tổ:</span>
                 <button
-                  onClick={onOpenReportChoice}
-                  className="px-2.5 py-1 bg-emerald-950 text-emerald-300 border border-emerald-700 rounded text-xs font-bold flex items-center gap-1"
+                  type="button"
+                  onClick={() => onSelectTeamCode('VAN_THU')}
+                  className={`flex-1 py-1 rounded-lg text-xs font-bold transition-all text-center ${
+                    activeTeamCode === 'VAN_THU' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'
+                  }`}
                 >
-                  <Sparkles className="w-3 h-3 text-emerald-400" />
-                  <span>{reportType === 'CONSOLIDATED_OFFICE' ? 'Form NĐ30 (Đa Tổ)' : 'Form Đơn Core'}</span>
+                  Văn thư
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectTeamCode('CDS')}
+                  className={`flex-1 py-1 rounded-lg text-xs font-bold transition-all text-center ${
+                    activeTeamCode === 'CDS' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  CĐS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectTeamCode('OFFICE_MASTER')}
+                  className={`flex-1 py-1 rounded-lg text-xs font-bold transition-all text-center ${
+                    activeTeamCode === 'OFFICE_MASTER' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Master
                 </button>
               </div>
             )}
 
-            {/* Context Inputs Mobile */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">Ngày lập:</label>
-                <input
-                  type="date"
-                  value={toInputDate(metadata.ngay_lap)}
-                  onChange={(e) => setMetadata(prev => ({ ...prev, ngay_lap: e.target.value }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100"
-                />
+            {/* 2. Sleek Segmented Control Tabs */}
+            <div className="grid grid-cols-3 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs gap-1">
+              <button
+                type="button"
+                onClick={() => setMobileMenuTab('actions')}
+                className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all ${
+                  mobileMenuTab === 'actions'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Tác Vụ</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileMenuTab('export')}
+                className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all ${
+                  mobileMenuTab === 'export'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Xuất & Xem</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileMenuTab('settings')}
+                className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all ${
+                  mobileMenuTab === 'settings'
+                    ? 'bg-slate-700 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Thiết Lập</span>
+              </button>
+            </div>
+
+            {/* 3. Tab Contents */}
+            {/* TAB 1: TÁC VỤ */}
+            {mobileMenuTab === 'actions' && (
+              <div className="space-y-2 animate-in fade-in-50 duration-150">
+                {onOpenStandaloneTaskKanban && (
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); onOpenStandaloneTaskKanban(); }}
+                    className="w-full py-2 px-3 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl font-bold text-xs flex items-center justify-between shadow-md active:scale-98 transition-all"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-yellow-300 animate-pulse" />
+                      <span>Kho Nhiệm Vụ Phân Cấp</span>
+                    </div>
+                    <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-medium">Khám phá</span>
+                  </button>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {onOpenApprovalChain && (
+                    <button
+                      onClick={() => { setIsMobileMenuOpen(false); onOpenApprovalChain(); }}
+                      className="py-2.5 px-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-xl font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                    >
+                      <ArrowRight className="w-4 h-4 text-blue-400" />
+                      <span>Trình Duyệt</span>
+                    </button>
+                  )}
+
+                  {onOpenDigitalSignature && (
+                    <button
+                      onClick={() => { setIsMobileMenuOpen(false); onOpenDigitalSignature(); }}
+                      className="py-2.5 px-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>Ký Số & Duyệt</span>
+                    </button>
+                  )}
+
+                  {onOpenKanbanPlanner && (
+                    <button
+                      onClick={() => { setIsMobileMenuOpen(false); onOpenKanbanPlanner(); }}
+                      className="py-2.5 px-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 rounded-xl font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                    >
+                      <Layout className="w-4 h-4 text-purple-400" />
+                      <span>Kanban Tuần</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); onOpenCarryOver(); }}
+                    className="py-2.5 px-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded-xl font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <RotateCcw className="w-4 h-4 text-amber-400" />
+                    <span>Kế Thừa Tuần</span>
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">Người lập:</label>
-                <input
-                  type="text"
-                  value={metadata.nguoi_lap || ''}
-                  onChange={(e) => setMetadata(prev => ({ ...prev, nguoi_lap: e.target.value }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100"
-                />
+            )}
+
+            {/* TAB 2: XUẤT & XEM */}
+            {mobileMenuTab === 'export' && (
+              <div className="space-y-2 animate-in fade-in-50 duration-150">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); onOpenPreview(); }}
+                    className="py-2.5 px-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 rounded-xl font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <FileText className="w-4 h-4 text-amber-400" />
+                    <span>Xem Báo Cáo</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); onGenerateWord(); }}
+                    className="py-2.5 px-2 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 rounded-xl font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-blue-400" />
+                    <span>Xuất Word (.docx)</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); onExportExcel(); }}
+                    className="py-2.5 px-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                    <span>Xuất Excel (.xlsx)</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); onSync(); }}
+                    className="py-2.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <RefreshCw className="w-4 h-4 text-cyan-400" />
+                    <span>Đồng Bộ CSDL</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); onOpenHistory(); }}
+                    className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors"
+                  >
+                    <History className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Lịch sử phiên bản</span>
+                  </button>
+
+                  {canShare && (
+                    <button
+                      onClick={() => { setIsMobileMenuOpen(false); onOpenShare(); }}
+                      className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Chia sẻ liên kết</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Feature Action Buttons Mobile */}
-            <div className="grid grid-cols-2 gap-2">
-              {onOpenStandaloneTaskKanban && (
-                <button
-                  onClick={() => { setIsMobileMenuOpen(false); onOpenStandaloneTaskKanban(); }}
-                  className="col-span-2 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
-                >
-                  <Sparkles className="w-4 h-4 text-yellow-300 animate-pulse" />
-                  <span>Kho Nhiệm Vụ Phân Cấp</span>
-                </button>
-              )}
+            {/* TAB 3: THIẾT LẬP */}
+            {mobileMenuTab === 'settings' && (
+              <div className="space-y-2.5 text-xs animate-in fade-in-50 duration-150">
+                {/* Form Switcher */}
+                {onOpenReportChoice && (
+                  <div className="flex items-center justify-between bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+                    <div>
+                      <span className="text-[11px] font-medium text-slate-300 block">Biểu mẫu báo cáo</span>
+                      <span className="text-[10px] text-slate-500">
+                        {reportType === 'CONSOLIDATED_OFFICE' ? 'Báo cáo hợp nhất NĐ30' : 'Báo cáo đơn vị/cá nhân'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => { setIsMobileMenuOpen(false); onOpenReportChoice(); }}
+                      className="px-2.5 py-1 bg-emerald-950 text-emerald-300 border border-emerald-700 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95"
+                    >
+                      <Sparkles className="w-3 h-3 text-emerald-400" />
+                      <span>Đổi mẫu</span>
+                    </button>
+                  </div>
+                )}
 
-              {onOpenKanbanPlanner && (
-                <button
-                  onClick={() => { setIsMobileMenuOpen(false); onOpenKanbanPlanner(); }}
-                  className="py-1.5 bg-purple-900/80 text-purple-200 border border-purple-700 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
-                >
-                  <Layout className="w-3.5 h-3.5" />
-                  <span>Kanban Tuần</span>
-                </button>
-              )}
+                {/* Mục III Thể thức & Chữ ký */}
+                {reportType === 'CONSOLIDATED_OFFICE' && onOpenDocInspectionModal && (
+                  <button
+                    onClick={() => { setIsMobileMenuOpen(false); onOpenDocInspectionModal(); }}
+                    className="w-full py-2 px-2.5 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-700/60 text-amber-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Mục III Thể Thức & Chữ Ký NĐ30</span>
+                  </button>
+                )}
 
-              <button
-                onClick={() => { setIsMobileMenuOpen(false); onOpenCarryOver(); }}
-                className="py-1.5 bg-amber-900/80 text-amber-200 border border-amber-700 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Kế Thừa</span>
-              </button>
-            </div>
+                {/* Ngày lập & Người lập */}
+                <div className="grid grid-cols-2 gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800/80">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 block mb-0.5">Ngày lập</label>
+                    <input
+                      type="date"
+                      value={toInputDate(metadata.ngay_lap)}
+                      onChange={(e) => setMetadata(prev => ({ ...prev, ngay_lap: e.target.value }))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-100 text-xs focus:ring-1 focus:ring-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 block mb-0.5">Người lập</label>
+                    <input
+                      type="text"
+                      value={metadata.nguoi_lap || ''}
+                      onChange={(e) => setMetadata(prev => ({ ...prev, nguoi_lap: e.target.value }))}
+                      placeholder="Nhập họ tên..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-100 text-xs focus:ring-1 focus:ring-cyan-500"
+                    />
+                  </div>
+                </div>
 
-            {/* Export Options Mobile */}
-            <div className="pt-2 border-t border-slate-800 grid grid-cols-2 gap-2 text-xs">
-              <button
-                onClick={() => { setIsMobileMenuOpen(false); onOpenPreview(); }}
-                className="py-1.5 bg-slate-800 text-amber-300 border border-slate-700 rounded-lg font-bold flex items-center justify-center gap-1"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Xem Báo Cáo</span>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileMenuOpen(false); onGenerateWord(); }}
-                className="py-1.5 bg-slate-800 text-blue-300 border border-slate-700 rounded-lg font-bold flex items-center justify-center gap-1"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Xuất Word (.docx)</span>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileMenuOpen(false); onExportExcel(); }}
-                className="py-1.5 bg-slate-800 text-emerald-300 border border-slate-700 rounded-lg font-bold flex items-center justify-center gap-1"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Xuất Excel (.xlsx)</span>
-              </button>
-
-              <button
-                onClick={() => { setIsMobileMenuOpen(false); onSync(); }}
-                className="py-1.5 bg-slate-800 text-slate-300 border border-slate-700 rounded-lg font-bold flex items-center justify-center gap-1"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Đồng Bộ CSDL</span>
-              </button>
-            </div>
-
-            {/* Utility Mobile */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
-              <button onClick={() => { setIsMobileMenuOpen(false); onOpenHistory(); }} className="flex items-center gap-1 hover:text-white">
-                <History className="w-3.5 h-3.5 text-blue-400" />
-                <span>Lịch sử</span>
-              </button>
-
-              {canShare && (
-                <button onClick={() => { setIsMobileMenuOpen(false); onOpenShare(); }} className="flex items-center gap-1 hover:text-white">
-                  <Share2 className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Chia sẻ</span>
-                </button>
-              )}
-
-              {onClearAll && (
-                <button onClick={() => { setIsMobileMenuOpen(false); onClearAll(); }} className="flex items-center gap-1 text-rose-400 hover:text-rose-300">
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Xóa tất cả</span>
-                </button>
-              )}
-            </div>
+                {/* Xóa tất cả */}
+                {onClearAll && (
+                  <div className="pt-1 flex justify-end">
+                    <button
+                      onClick={() => { setIsMobileMenuOpen(false); onClearAll(); }}
+                      className="flex items-center gap-1 px-2.5 py-1 text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 border border-rose-900/50 rounded-lg text-[11px] font-medium transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Xóa trắng dữ liệu tuần</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

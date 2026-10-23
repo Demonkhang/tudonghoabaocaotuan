@@ -14,10 +14,13 @@ export function TaskDetailModal({ isOpen, mode, task, onClose, onSave }: TaskDet
   const [formData, setFormData] = useState<KanbanTaskItem | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isCustomProgress, setIsCustomProgress] = useState(false);
 
   useEffect(() => {
     if (task) {
       setFormData({ ...task });
+      const standardList = ['Đang thực hiện', 'Hoàn thành', 'Chưa thực hiện', 'Hoàn thành trễ', 'Hủy / Kết thúc'];
+      setIsCustomProgress(!standardList.includes(task.tien_do || 'Đang thực hiện'));
     }
   }, [task]);
 
@@ -79,7 +82,7 @@ export function TaskDetailModal({ isOpen, mode, task, onClose, onSave }: TaskDet
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[260] p-4 animate-fadeIn">
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[260] p-2 sm:p-4 animate-fadeIn">
       <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-2xl w-full text-slate-100 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* HEADER */}
@@ -210,7 +213,7 @@ export function TaskDetailModal({ isOpen, mode, task, onClose, onSave }: TaskDet
           </div>
         ) : (
           /* FORM EDIT MODE FOR EDITING TASKS */
-          <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar text-xs">
+          <form onSubmit={handleSubmit} className="p-3.5 sm:p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar text-xs">
             {/* Nội dung */}
             <div>
               <label className="block text-xs font-bold text-slate-300 mb-1">
@@ -221,7 +224,7 @@ export function TaskDetailModal({ isOpen, mode, task, onClose, onSave }: TaskDet
                 value={formData.noi_dung}
                 onChange={e => handleInputChange('noi_dung', e.target.value)}
                 required
-                className="w-full p-3 bg-slate-950 border border-slate-700/80 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500 leading-relaxed font-sans"
+                className="w-full p-3 bg-slate-950 border border-slate-700/80 rounded-xl text-base sm:text-xs text-white focus:outline-none focus:border-blue-500 leading-relaxed font-sans"
               />
             </div>
 
@@ -240,18 +243,62 @@ export function TaskDetailModal({ isOpen, mode, task, onClose, onSave }: TaskDet
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Tiến độ thực hiện:</label>
-                <select
-                  value={formData.tien_do || 'Đang thực hiện'}
-                  onChange={e => handleInputChange('tien_do', e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="Đang thực hiện">Đang thực hiện</option>
-                  <option value="Hoàn thành">Hoàn thành</option>
-                  <option value="Chưa thực hiện">Chưa thực hiện</option>
-                  <option value="Hoàn thành trễ">Hoàn thành trễ</option>
-                  <option value="Hủy / Kết thúc">Hủy / Kết thúc</option>
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-300">Tiến độ thực hiện:</label>
+                  {!isCustomProgress ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomProgress(true)}
+                      className="text-[10px] text-blue-400 hover:underline cursor-pointer"
+                    >
+                      ✏️ Tùy chỉnh...
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomProgress(false);
+                        handleInputChange('tien_do', 'Đang thực hiện');
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      ↩ Chọn mẫu có sẵn
+                    </button>
+                  )}
+                </div>
+
+                {!isCustomProgress ? (
+                  <select
+                    value={formData.tien_do || 'Đang thực hiện'}
+                    onChange={e => {
+                      if (e.target.value === '__custom__') {
+                        setIsCustomProgress(true);
+                      } else {
+                        handleInputChange('tien_do', e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500"
+                  >
+                    {!['Đang thực hiện', 'Hoàn thành', 'Chưa thực hiện', 'Hoàn thành trễ', 'Hủy / Kết thúc'].includes(formData.tien_do || '') && (
+                      <option value={formData.tien_do}>✨ {formData.tien_do} (Tùy chỉnh)</option>
+                    )}
+                    <option value="Đang thực hiện">Đang thực hiện</option>
+                    <option value="Hoàn thành">Hoàn thành</option>
+                    <option value="Chưa thực hiện">Chưa thực hiện</option>
+                    <option value="Hoàn thành trễ">Hoàn thành trễ</option>
+                    <option value="Hủy / Kết thúc">Hủy / Kết thúc</option>
+                    <option value="__custom__">✏️ Tùy chỉnh...</option>
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    autoFocus
+                    value={formData.tien_do || ''}
+                    onChange={e => handleInputChange('tien_do', e.target.value)}
+                    placeholder="Nhập tiến độ tùy chỉnh (vd: Đạt 85%, Chờ thẩm định...)"
+                    className="w-full px-3 py-2 bg-slate-950 border border-indigo-500 rounded-xl text-xs text-white focus:outline-none shadow-sm"
+                  />
+                )}
               </div>
             </div>
 

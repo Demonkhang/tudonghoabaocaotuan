@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pencil, Plus, Trash2, ClipboardList, ArrowRight, Eye, Edit3, Paperclip, FileCheck, PenTool, Star, GripVertical } from 'lucide-react';
+import { Pencil, Plus, Trash2, ClipboardList, ArrowRight, Eye, Edit3, Paperclip, FileCheck, PenTool, Star, Pin, GripVertical, Check, X, Clock, Building2, ChevronDown, User, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { TaskTable1, TaskTable2, ReportMetadata, processTable1, processTable2, classifyTask } from '../utils/reportUtils';
 import { DocInspectionStatItem, ConsolidatedReportMetaItem } from './DocInspectionModal';
 import { ConfirmModal, ConfirmModalProps } from './ConfirmModal';
@@ -200,6 +200,10 @@ export const TableEditor: React.FC<TableEditorProps> = ({
 }) => {
   const [confirmModalConfig, setConfirmModalConfig] = useState<ConfirmModalProps | null>(null);
 
+  // Custom progress inline editing state
+  const [editingCustomProgressId, setEditingCustomProgressId] = useState<string | null>(null);
+  const [customProgressValue, setCustomProgressValue] = useState<string>('');
+
   // Drag and drop states for reordering tasks
   const [draggedTable1Id, setDraggedTable1Id] = useState<string | null>(null);
   const [dragOverTable1Id, setDragOverTable1Id] = useState<string | null>(null);
@@ -292,6 +296,46 @@ export const TableEditor: React.FC<TableEditorProps> = ({
         return it;
       })
     );
+  };
+
+  // Toggle Ghim trục trọng tâm Bảng 1 (Mặc định ở phía trên)
+  const togglePinTable1 = (id: string) => {
+    setTable1(prev =>
+      prev.map(it => {
+        if (it.id === id) {
+          const nextPinned = !it.is_pinned;
+          return {
+            ...it,
+            is_pinned: nextPinned,
+            isEdited: true
+          };
+        }
+        return it;
+      })
+    );
+    setTimeout(() => {
+      onSaveReport?.();
+    }, 150);
+  };
+
+  // Toggle Ghim trục trọng tâm Bảng 2 (Mặc định ở phía trên)
+  const togglePinTable2 = (id: string) => {
+    setTable2(prev =>
+      prev.map(it => {
+        if (it.id === id) {
+          const nextPinned = !it.is_pinned;
+          return {
+            ...it,
+            is_pinned: nextPinned,
+            isEdited: true
+          };
+        }
+        return it;
+      })
+    );
+    setTimeout(() => {
+      onSaveReport?.();
+    }, 150);
   };
 
   // Toggle Đánh sao Bảng 1
@@ -474,6 +518,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
   // Helper render 1 hàng Bảng I
   const renderTable1Row = (row: TaskTable1 & { stt: number }) => {
     const isStarred = Boolean(row.is_starred) || isTaskStarredInStorage(currentUser?.department_id, row.noi_dung);
+    const isPinned = Boolean(row.is_pinned);
 
     return (
       <tr
@@ -485,6 +530,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
         onDrop={(e) => handleTable1Drop(e, row.id)}
         onDragEnd={() => { setDraggedTable1Id(null); setDragOverTable1Id(null); }}
         className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-all group ${
+          isPinned ? 'border-l-4 border-l-rose-500 bg-rose-50/30 dark:bg-rose-950/20' : ''
+        } ${
           draggedTable1Id === row.id ? 'opacity-30 bg-blue-100 dark:bg-blue-950' : ''
         } ${
           dragOverTable1Id === row.id ? 'border-t-2 border-t-blue-500 bg-blue-50/70 dark:bg-blue-900/40' : ''
@@ -518,6 +565,12 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                   Giao bởi: {row.assigner_name}
                 </span>
               )}
+              {isPinned && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-rose-500/20 text-rose-600 dark:text-rose-300 px-2 py-0.5 rounded-md border border-rose-500/40 shadow-xs">
+                  <Pin className="w-3 h-3 fill-rose-500 text-rose-500 -rotate-45" />
+                  <span>Trục trọng tâm</span>
+                </span>
+              )}
               {isStarred && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/40">
                   <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
@@ -528,6 +581,22 @@ export const TableEditor: React.FC<TableEditorProps> = ({
 
             <div className="flex items-center gap-1.5">
               <button
+                type="button"
+                onClick={() => togglePinTable1(row.id)}
+                className={`p-1 rounded transition-colors cursor-pointer shrink-0 ${
+                  isPinned ? 'hover:bg-rose-500/20 text-rose-500' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-500/10'
+                }`}
+                title={isPinned ? "Bỏ ghim trục trọng tâm" : "Ghim trục trọng tâm (Mặc định ở phía trên)"}
+              >
+                <Pin
+                  className={`w-4 h-4 transition-transform hover:scale-125 ${
+                    isPinned ? 'fill-rose-500 text-rose-500 -rotate-45' : ''
+                  }`}
+                />
+              </button>
+
+              <button
+                type="button"
                 onClick={() => toggleStarTable1(row.id)}
                 className="p-1 rounded hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
                 title={isStarred ? "Bỏ gắn sao nhiệm vụ lặp lại" : "Đánh sao nhiệm vụ lặp lại / thường xuyên"}
@@ -583,26 +652,111 @@ export const TableEditor: React.FC<TableEditorProps> = ({
           />
         </td>
 
-        {/* Tiến độ Dropdown Select */}
+        {/* Tiến độ Dropdown Select & Custom Option */}
         <td className="px-4 py-3">
-          <select
-            value={row.tien_do}
-            onChange={e => updateTable1Field(row.id, 'tien_do', e.target.value)}
-            className={`text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer focus:outline-hidden border-none ${
-              row.tien_do === 'Hoàn thành'
+          {editingCustomProgressId === row.id ? (
+            <div className="flex items-center gap-1 min-w-[175px] animate-fadeIn">
+              <input
+                type="text"
+                autoFocus
+                value={customProgressValue}
+                onChange={e => setCustomProgressValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const finalVal = customProgressValue.trim() || 'Đang thực hiện';
+                    updateTable1Field(row.id, 'tien_do', finalVal);
+                    setEditingCustomProgressId(null);
+                  } else if (e.key === 'Escape') {
+                    setEditingCustomProgressId(null);
+                  }
+                }}
+                placeholder="Nhập tiến độ tùy chỉnh..."
+                className="w-full text-xs font-bold px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-blue-500 text-slate-800 dark:text-slate-100 focus:outline-none shadow-sm"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const finalVal = customProgressValue.trim() || 'Đang thực hiện';
+                  updateTable1Field(row.id, 'tien_do', finalVal);
+                  setEditingCustomProgressId(null);
+                }}
+                className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer transition-all shrink-0 shadow-xs"
+                title="Lưu tiến độ tùy chỉnh (Enter)"
+              >
+                <Check className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingCustomProgressId(null)}
+                className="p-1 rounded bg-slate-600 hover:bg-slate-500 text-white cursor-pointer transition-all shrink-0 shadow-xs"
+                title="Hủy bỏ (Esc)"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            (() => {
+              const standardOptions = ['Hoàn thành', 'Đang thực hiện', 'Hoàn thành trễ', 'Chưa thực hiện'];
+              const isCustom = !standardOptions.includes(row.tien_do);
+              const badgeClass = row.tien_do === 'Hoàn thành'
                 ? 'bg-emerald-600 text-white dark:bg-emerald-600'
                 : row.tien_do === 'Đang thực hiện'
                 ? 'bg-[#005dac] text-white dark:bg-blue-600'
                 : row.tien_do === 'Hoàn thành trễ'
                 ? 'bg-amber-600 text-white dark:bg-amber-600'
-                : 'bg-slate-500 text-white dark:bg-slate-600'
-            }`}
-          >
-            <option value="Hoàn thành" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành</option>
-            <option value="Đang thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Đang thực hiện</option>
-            <option value="Hoàn thành trễ" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành trễ</option>
-            <option value="Chưa thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Chưa thực hiện</option>
-          </select>
+                : row.tien_do === 'Chưa thực hiện'
+                ? 'bg-slate-500 text-white dark:bg-slate-600'
+                : 'bg-indigo-600 text-white dark:bg-indigo-600 shadow-xs';
+
+              return (
+                <div className="flex items-center gap-1.5 flex-nowrap">
+                  <select
+                    value={isCustom ? '__custom_val__' : row.tien_do}
+                    onChange={e => {
+                      if (e.target.value === '__custom_prompt__') {
+                        setEditingCustomProgressId(row.id);
+                        setCustomProgressValue(isCustom ? row.tien_do : '');
+                      } else if (e.target.value === '__custom_val__') {
+                        // Giữ nguyên giá trị tùy chỉnh hiện tại
+                      } else {
+                        updateTable1Field(row.id, 'tien_do', e.target.value);
+                      }
+                    }}
+                    className={`text-xs font-bold px-2.5 py-1 rounded-full cursor-pointer focus:outline-hidden border-none max-w-[160px] truncate ${badgeClass}`}
+                  >
+                    {isCustom && (
+                      <option value="__custom_val__" className="bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold">
+                        ✨ {row.tien_do} (Tùy chỉnh)
+                      </option>
+                    )}
+                    <option value="Hoàn thành" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành</option>
+                    <option value="Đang thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Đang thực hiện</option>
+                    <option value="Hoàn thành trễ" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành trễ</option>
+                    <option value="Chưa thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Chưa thực hiện</option>
+                    <option disabled className="bg-slate-200 dark:bg-slate-700 text-slate-500 text-[10px]">──────────</option>
+                    <option value="__custom_prompt__" className="bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold">
+                      ✏️ Tùy chỉnh...
+                    </option>
+                  </select>
+
+                  {isCustom && !isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCustomProgressId(row.id);
+                        setCustomProgressValue(row.tien_do);
+                      }}
+                      className="p-1 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-950/40 rounded cursor-pointer transition-colors shrink-0"
+                      title="Sửa lại tiến độ tùy chỉnh này"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })()
+          )}
         </td>
 
         <td className="px-3 py-3 text-center">
@@ -649,6 +803,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
   // Helper render 1 hàng Bảng II
   const renderTable2Row = (row: TaskTable2 & { stt: number }) => {
     const isStarred = Boolean(row.is_starred) || isTaskStarredInStorage(currentUser?.department_id, row.noi_dung);
+    const isPinned = Boolean(row.is_pinned);
 
     return (
       <tr
@@ -660,6 +815,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
         onDrop={(e) => handleTable2Drop(e, row.id)}
         onDragEnd={() => { setDraggedTable2Id(null); setDragOverTable2Id(null); }}
         className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-all group ${
+          isPinned ? 'border-l-4 border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/20' : ''
+        } ${
           draggedTable2Id === row.id ? 'opacity-30 bg-amber-100 dark:bg-amber-950' : ''
         } ${
           dragOverTable2Id === row.id ? 'border-t-2 border-t-amber-500 bg-amber-50/70 dark:bg-amber-900/40' : ''
@@ -677,25 +834,51 @@ export const TableEditor: React.FC<TableEditorProps> = ({
         </td>
         
         <td className="px-4 py-3">
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => toggleStarTable2(row.id)}
-              className="p-1 rounded hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
-              title={isStarred ? "Bỏ gắn sao nhiệm vụ lặp lại" : "Đánh sao nhiệm vụ lặp lại / thường xuyên"}
-            >
-              <Star
-                className={`w-4 h-4 transition-transform hover:scale-125 ${
-                  isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
+          <div className="flex flex-col gap-1">
+            {isPinned && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/40 shadow-xs">
+                  <Pin className="w-3 h-3 fill-amber-500 text-amber-500 -rotate-45" />
+                  <span>Trục trọng tâm</span>
+                </span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => togglePinTable2(row.id)}
+                className={`p-1 rounded transition-colors cursor-pointer shrink-0 ${
+                  isPinned ? 'hover:bg-amber-500/20 text-amber-500' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-500/10'
                 }`}
-              />
-            </button>
+                title={isPinned ? "Bỏ ghim trục trọng tâm" : "Ghim trục trọng tâm (Mặc định ở phía trên)"}
+              >
+                <Pin
+                  className={`w-4 h-4 transition-transform hover:scale-125 ${
+                    isPinned ? 'fill-amber-500 text-amber-500 -rotate-45' : ''
+                  }`}
+                />
+              </button>
 
-            <input
-              type="text"
-              value={row.noi_dung}
-              onChange={e => updateTable2Field(row.id, 'noi_dung', e.target.value)}
-              className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#ba5b00] dark:focus:border-amber-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium"
-            />
+              <button
+                type="button"
+                onClick={() => toggleStarTable2(row.id)}
+                className="p-1 rounded hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
+                title={isStarred ? "Bỏ gắn sao nhiệm vụ lặp lại" : "Đánh sao nhiệm vụ lặp lại / thường xuyên"}
+              >
+                <Star
+                  className={`w-4 h-4 transition-transform hover:scale-125 ${
+                    isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
+                  }`}
+                />
+              </button>
+
+              <input
+                type="text"
+                value={row.noi_dung}
+                onChange={e => updateTable2Field(row.id, 'noi_dung', e.target.value)}
+                className="w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#ba5b00] dark:focus:border-amber-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium"
+              />
+            </div>
           </div>
         </td>
 
@@ -728,6 +911,440 @@ export const TableEditor: React.FC<TableEditorProps> = ({
           )}
         </td>
       </tr>
+    );
+  };
+
+  // Helper render 1 card Bảng I trên Mobile (< md)
+  const renderTable1Card = (row: TaskTable1 & { stt: number }) => {
+    const isStarred = Boolean(row.is_starred) || isTaskStarredInStorage(currentUser?.department_id, row.noi_dung);
+    const isPinned = Boolean(row.is_pinned);
+    const standardOptions = ['Hoàn thành', 'Đang thực hiện', 'Hoàn thành trễ', 'Chưa thực hiện'];
+    const isCustom = !standardOptions.includes(row.tien_do);
+    const badgeClass = row.tien_do === 'Hoàn thành'
+      ? 'bg-emerald-600 text-white dark:bg-emerald-600'
+      : row.tien_do === 'Đang thực hiện'
+      ? 'bg-[#005dac] text-white dark:bg-blue-600'
+      : row.tien_do === 'Hoàn thành trễ'
+      ? 'bg-amber-600 text-white dark:bg-amber-600'
+      : row.tien_do === 'Chưa thực hiện'
+      ? 'bg-slate-500 text-white dark:bg-slate-600'
+      : 'bg-indigo-600 text-white dark:bg-indigo-600 shadow-xs';
+
+    return (
+      <div
+        key={`mobile_card_${row.id}`}
+        id={`mobile_card_${row.id}`}
+        className={`bg-white dark:bg-slate-900 rounded-xl p-3.5 border transition-all space-y-2.5 shadow-xs ${
+          isPinned ? 'border-l-4 border-l-rose-500 bg-rose-50/20 dark:bg-rose-950/10' : ''
+        } ${
+          highlightedRowId === row.id
+            ? 'border-amber-500 ring-2 ring-amber-400 bg-amber-50/50 dark:bg-amber-950/40'
+            : row.thoi_gian === 'Chưa nhập'
+            ? 'border-red-300 dark:border-red-900/60 bg-red-50/40 dark:bg-red-950/20'
+            : 'border-slate-200 dark:border-slate-800'
+        }`}
+      >
+        {/* Card Header: STT, Badges, Star, Actions */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="w-6 h-6 rounded-md bg-blue-100 dark:bg-blue-900/60 text-[#005dac] dark:text-blue-300 font-extrabold text-xs flex items-center justify-center shrink-0">
+              #{row.stt}
+            </span>
+
+            {row.is_directive_task && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-purple-900/80 text-purple-200 px-2 py-0.5 rounded-md border border-purple-700/60 shadow-xs">
+                👑 Cấp trên giao
+              </span>
+            )}
+
+            {isPinned && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-rose-500/20 text-rose-600 dark:text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/40 shadow-xs">
+                <Pin className="w-3 h-3 fill-rose-500 text-rose-500 -rotate-45" />
+                <span>Trọng tâm</span>
+              </span>
+            )}
+
+            {isStarred && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/20 text-amber-500 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/40">
+                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                <span>Mẫu</span>
+              </span>
+            )}
+
+            {row.nhom === 'Đột xuất' ? (
+              <span className="text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900/60">
+                Đột xuất
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 px-1.5 py-0.5 rounded">
+                Thường xuyên
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => togglePinTable1(row.id)}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                isPinned ? 'hover:bg-rose-500/20 text-rose-500 bg-rose-50 dark:bg-rose-950/30' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800'
+              }`}
+              title={isPinned ? "Bỏ ghim trục trọng tâm" : "Ghim trục trọng tâm lên đầu"}
+            >
+              <Pin
+                className={`w-4 h-4 ${
+                  isPinned ? 'fill-rose-500 text-rose-500 -rotate-45' : ''
+                }`}
+              />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => toggleStarTable1(row.id)}
+              className="p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors cursor-pointer"
+              title={isStarred ? "Bỏ gắn sao" : "Gắn sao nhiệm vụ mẫu"}
+            >
+              <Star
+                className={`w-4 h-4 ${
+                  isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
+                }`}
+              />
+            </button>
+
+            {row.tien_do === 'Hoàn thành' ? (
+              <button
+                type="button"
+                onClick={() => onOpenDetailModal?.(row, 'view')}
+                className="p-1.5 text-[#005dac] dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                title="Xem chi tiết & Minh chứng"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOpenDetailModal?.(row, 'edit')}
+                className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                title="Chỉnh sửa chi tiết"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+            )}
+
+            {!isReadOnly && (
+              <button
+                type="button"
+                onClick={() => deleteTable1Row(row.id)}
+                className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg cursor-pointer"
+                title="Xóa nhiệm vụ này"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Task Title (Nội dung nhiệm vụ) */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight">Nội dung nhiệm vụ:</span>
+            {row.isEdited && !row.is_directive_task && (
+              <span className="text-[10px] bg-amber-100 dark:bg-amber-950 dark:text-amber-300 text-amber-800 px-1.5 py-0.2 rounded font-bold border border-amber-300 dark:border-amber-700">
+                Đã sửa
+              </span>
+            )}
+          </div>
+          <textarea
+            rows={2}
+            readOnly={row.is_directive_task}
+            value={row.noi_dung}
+            onChange={e => updateTable1Field(row.id, 'noi_dung', e.target.value)}
+            className={`w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-sm font-semibold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#005dac] focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all ${
+              row.is_directive_task ? 'font-semibold text-purple-900 dark:text-purple-200 cursor-not-allowed bg-purple-50/40 dark:bg-purple-950/20' : ''
+            }`}
+            placeholder="Nhập nội dung nhiệm vụ..."
+          />
+        </div>
+
+        {/* Implementation Status (Triển khai thực hiện) */}
+        <div className="space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight">Triển khai thực hiện:</span>
+          <textarea
+            rows={2}
+            value={row.trien_khai}
+            onChange={e => updateTable1Field(row.id, 'trien_khai', e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs font-medium text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-[#005dac] focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all"
+            placeholder="Mô tả kết quả hoặc tình hình thực hiện..."
+          />
+        </div>
+
+        {/* Time & Progress Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+          {/* Thời gian */}
+          <div className="space-y-1">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              <span>Thời gian hoàn thành:</span>
+            </span>
+            <input
+              type="text"
+              readOnly={row.is_directive_task}
+              value={row.thoi_gian}
+              onChange={e => updateTable1Field(row.id, 'thoi_gian', e.target.value)}
+              className={`w-full bg-slate-50 dark:bg-slate-800/80 border rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#005dac] ${
+                row.thoi_gian === 'Chưa nhập'
+                  ? 'border-red-400 text-red-600 dark:text-red-400 bg-red-50/50'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+              }`}
+              placeholder="VD: 20/10/2026 hoặc Trong tuần"
+            />
+          </div>
+
+          {/* Tiến độ */}
+          <div className="space-y-1">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight flex items-center justify-between">
+              <span>Tiến độ thực hiện:</span>
+              {row.file_minh_chung && (
+                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 text-[10px] font-bold" title={row.file_original_name || 'Đã đính kèm file'}>
+                  <Paperclip className="w-3 h-3" /> Đã có minh chứng
+                </span>
+              )}
+            </span>
+
+            {editingCustomProgressId === row.id ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  autoFocus
+                  value={customProgressValue}
+                  onChange={e => setCustomProgressValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const finalVal = customProgressValue.trim() || 'Đang thực hiện';
+                      updateTable1Field(row.id, 'tien_do', finalVal);
+                      setEditingCustomProgressId(null);
+                    } else if (e.key === 'Escape') {
+                      setEditingCustomProgressId(null);
+                    }
+                  }}
+                  placeholder="Tiến độ tùy chỉnh..."
+                  className="w-full text-xs font-bold px-2 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-blue-500 text-slate-800 dark:text-slate-100 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const finalVal = customProgressValue.trim() || 'Đang thực hiện';
+                    updateTable1Field(row.id, 'tien_do', finalVal);
+                    setEditingCustomProgressId(null);
+                  }}
+                  className="p-1.5 rounded bg-emerald-600 text-white cursor-pointer"
+                  title="Lưu (Enter)"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingCustomProgressId(null)}
+                  className="p-1.5 rounded bg-slate-600 text-white cursor-pointer"
+                  title="Hủy (Esc)"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={isCustom ? '__custom_val__' : row.tien_do}
+                  onChange={e => {
+                    if (e.target.value === '__custom_prompt__') {
+                      setEditingCustomProgressId(row.id);
+                      setCustomProgressValue(isCustom ? row.tien_do : '');
+                    } else if (e.target.value === '__custom_val__') {
+                      // Giữ nguyên
+                    } else {
+                      updateTable1Field(row.id, 'tien_do', e.target.value);
+                    }
+                  }}
+                  className={`w-full text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer focus:outline-none border-none truncate ${badgeClass}`}
+                >
+                  {isCustom && (
+                    <option value="__custom_val__" className="bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold">
+                      ✨ {row.tien_do} (Tùy chỉnh)
+                    </option>
+                  )}
+                  <option value="Hoàn thành" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành</option>
+                  <option value="Đang thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Đang thực hiện</option>
+                  <option value="Hoàn thành trễ" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Hoàn thành trễ</option>
+                  <option value="Chưa thực hiện" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-medium">Chưa thực hiện</option>
+                  <option disabled className="bg-slate-200 dark:bg-slate-700 text-slate-500 text-[10px]">──────────</option>
+                  <option value="__custom_prompt__" className="bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold">
+                    ✏️ Tùy chỉnh...
+                  </option>
+                </select>
+
+                {isCustom && !isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingCustomProgressId(row.id);
+                      setCustomProgressValue(row.tien_do);
+                    }}
+                    className="p-1.5 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer shrink-0"
+                    title="Sửa tiến độ tùy chỉnh"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Quick Proof Upload Button on Card */}
+        {row.tien_do === 'Hoàn thành' && !row.file_minh_chung && onOpenProofModal && (
+          <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => onOpenProofModal(row)}
+              className="w-full py-1.5 px-2 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Paperclip className="w-3.5 h-3.5" />
+              <span>Đính kèm file minh chứng hoàn thành</span>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Helper render 1 card Bảng II trên Mobile (< md)
+  const renderTable2Card = (row: TaskTable2 & { stt: number }) => {
+    const isStarred = Boolean(row.is_starred) || isTaskStarredInStorage(currentUser?.department_id, row.noi_dung);
+    const isPinned = Boolean(row.is_pinned);
+
+    return (
+      <div
+        key={`mobile_card2_${row.id}`}
+        id={`mobile_card2_${row.id}`}
+        className={`bg-white dark:bg-slate-900 rounded-xl p-3.5 border transition-all space-y-2.5 shadow-xs ${
+          isPinned ? 'border-l-4 border-l-amber-500 bg-amber-50/20 dark:bg-amber-950/10' : ''
+        } border-amber-200/80 dark:border-amber-900/40`}
+      >
+        {/* Card Header: STT, Tag, Pin, Star, Delete */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="w-6 h-6 rounded-md bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 font-extrabold text-xs flex items-center justify-center shrink-0">
+              #{row.stt}
+            </span>
+
+            {isPinned && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/40 shadow-xs">
+                <Pin className="w-3 h-3 fill-amber-500 text-amber-500 -rotate-45" />
+                <span>Trọng tâm</span>
+              </span>
+            )}
+
+            {isStarred && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/20 text-amber-500 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/40">
+                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                <span>Mẫu</span>
+              </span>
+            )}
+
+            {row.nhom === 'Đột xuất' ? (
+              <span className="text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900/60">
+                Đột xuất
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-900/50">
+                Thường xuyên
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => togglePinTable2(row.id)}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                isPinned ? 'hover:bg-amber-500/20 text-amber-500 bg-amber-50 dark:bg-amber-950/30' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-slate-800'
+              }`}
+              title={isPinned ? "Bỏ ghim trục trọng tâm" : "Ghim trục trọng tâm lên đầu"}
+            >
+              <Pin
+                className={`w-4 h-4 ${
+                  isPinned ? 'fill-amber-500 text-amber-500 -rotate-45' : ''
+                }`}
+              />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => toggleStarTable2(row.id)}
+              className="p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors cursor-pointer"
+              title={isStarred ? "Bỏ gắn sao" : "Gắn sao nhiệm vụ mẫu"}
+            >
+              <Star
+                className={`w-4 h-4 ${
+                  isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
+                }`}
+              />
+            </button>
+
+            {!isReadOnly && (
+              <button
+                type="button"
+                onClick={() => deleteTable2Row(row.id)}
+                className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg cursor-pointer"
+                title="Xóa kế hoạch này"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Task Title */}
+        <div className="space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight">Nhiệm vụ / Công tác:</span>
+          <textarea
+            rows={2}
+            value={row.noi_dung}
+            onChange={e => updateTable2Field(row.id, 'noi_dung', e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-sm font-semibold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#ba5b00] focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all"
+            placeholder="Nhập tên nhiệm vụ dự kiến..."
+          />
+        </div>
+
+        {/* Expected Time & Expected Product */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-amber-100 dark:border-slate-800/80">
+          <div className="space-y-1">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight flex items-center gap-1">
+              <Clock className="w-3 h-3 text-amber-600" />
+              <span>Thời gian dự kiến:</span>
+            </span>
+            <input
+              type="text"
+              value={row.thoi_gian_du_kien}
+              onChange={e => updateTable2Field(row.id, 'thoi_gian_du_kien', e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ba5b00] focus:outline-none"
+              placeholder="VD: Trong tuần"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight">Nội dung &amp; Sản phẩm dự kiến:</span>
+            <input
+              type="text"
+              value={row.san_pham_du_kien}
+              onChange={e => updateTable2Field(row.id, 'san_pham_du_kien', e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ba5b00] focus:outline-none"
+              placeholder="Sản phẩm hoàn thành..."
+            />
+          </div>
+        </div>
+      </div>
     );
   };
 
@@ -776,17 +1393,17 @@ export const TableEditor: React.FC<TableEditorProps> = ({
     : defaultDeptStatsList;
 
   return (
-    <section className="col-span-12 lg:col-span-9 overflow-y-auto p-6 bg-[#f9f9ff] dark:bg-slate-900 space-y-6 scroll-smooth pb-16 transition-colors duration-300">
+    <section className="col-span-12 lg:col-span-9 h-full min-h-0 overflow-y-auto p-3 sm:p-4 md:p-6 bg-[#f9f9ff] dark:bg-slate-900 space-y-4 sm:space-y-6 scroll-smooth pb-28 lg:pb-36 transition-colors duration-300">
       
       {/* Banner thông báo chế độ Form */}
       {isConsolidated && (
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 p-4 rounded-xl border border-blue-500/30 text-white flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 p-3.5 sm:p-4 rounded-xl border border-blue-500/30 text-white flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
           <div className="flex items-center gap-3">
             <div className={`p-2.5 rounded-lg shrink-0 ${activeTeamCode === 'VAN_THU' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : activeTeamCode === 'CDS' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
               <ClipboardList className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-bold text-sm flex items-center gap-2">
+              <div className="font-bold text-sm flex items-center gap-2 flex-wrap">
                 <span>FORM TỔNG HỢP VĂN PHÒNG (NGHỊ ĐỊNH 30)</span>
                 <span className={`text-[10px] uppercase px-2 py-0.5 rounded font-extrabold border ${
                   activeTeamCode === 'VAN_THU' ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/30' :
@@ -808,28 +1425,29 @@ export const TableEditor: React.FC<TableEditorProps> = ({
 
       {/* ==================== BẢNG I ==================== */}
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-[#c1c6d4] dark:border-slate-800 overflow-hidden">
-        <div className="bg-[#cbe6ff] dark:bg-slate-800 px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center">
-          <h2 className="font-bold text-lg text-[#001e30] dark:text-blue-300 flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-[#005dac] dark:text-blue-400" />
-            <span>BẢNG I: KẾT QUẢ THỰC HIỆN CÔNG TÁC</span>
+        <div className="bg-[#cbe6ff] dark:bg-slate-800 px-3.5 sm:px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center gap-2">
+          <h2 className="font-bold text-base sm:text-lg text-[#001e30] dark:text-blue-300 flex items-center gap-2 truncate">
+            <ClipboardList className="w-5 h-5 text-[#005dac] dark:text-blue-400 shrink-0" />
+            <span className="truncate">BẢNG I: KẾT QUẢ THỰC HIỆN CÔNG TÁC</span>
           </h2>
-          <div className="flex items-center gap-3">
-            <span className="text-xs uppercase font-extrabold tracking-wider text-[#4e677c] dark:text-slate-300">
-              Tuần {tuan} / {nam}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <span className="text-[11px] sm:text-xs uppercase font-extrabold tracking-wider text-[#4e677c] dark:text-slate-300">
+              Tuần {tuan}/{nam}
             </span>
             {!isReadOnly && table1.length > 0 && onClearTable1 && (
               <button
                 onClick={onClearTable1}
-                className="text-xs font-bold text-red-600 dark:text-red-400 bg-white/80 dark:bg-slate-700/80 hover:bg-red-50 dark:hover:bg-red-950/60 px-2.5 py-1 rounded border border-red-200 dark:border-red-900 transition-all flex items-center gap-1 cursor-pointer"
+                className="text-xs font-bold text-red-600 dark:text-red-400 bg-white/80 dark:bg-slate-700/80 hover:bg-red-50 dark:hover:bg-red-950/60 px-2 sm:px-2.5 py-1 rounded border border-red-200 dark:border-red-900 transition-all flex items-center gap-1 cursor-pointer"
                 title="Xóa nhanh tất cả nhiệm vụ Bảng I"
               >
-                <Trash2 className="w-3.5 h-3.5" /> Xóa Bảng I
+                <Trash2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Xóa Bảng I</span>
               </button>
             )}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* DESKTOP TABLE VIEW (Visible on >= md screens) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#e6e8f0] dark:bg-slate-800/90">
               <tr className="text-xs uppercase text-[#414752] dark:text-slate-300 font-bold border-b border-[#c1c6d4] dark:border-slate-700">
@@ -991,32 +1609,181 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* MOBILE CARD LIST VIEW (Visible on < md screens) */}
+        <div className="block md:hidden p-3 space-y-3 bg-slate-50/50 dark:bg-slate-950/30">
+          {isConsolidated && activeTeamCode === 'OFFICE_MASTER' ? (
+            <>
+              {/* MASTER - NHÓM THƯỜNG XUYÊN */}
+              <div className="space-y-2">
+                <div className="bg-[#cbe6ff]/70 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-slate-700">
+                  <span className="font-extrabold text-xs text-[#005dac] dark:text-blue-300">
+                    I. Thường xuyên ({p1_vt.txStats.done + p1_cds.txStats.done}/{p1_vt.txStats.total + p1_cds.txStats.total} hoàn thành)
+                  </span>
+                </div>
+
+                {/* 1. Bộ phận Văn thư */}
+                <div className="space-y-2 pl-1">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
+                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                      1. Tổ Văn thư ({p1_vt.txStats.done}/{p1_vt.txStats.total})
+                    </span>
+                    <button
+                      onClick={() => addTable1Row('Thường xuyên', 'VAN_THU')}
+                      className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Thêm
+                    </button>
+                  </div>
+                  {p1_vt.thuongXuyen.length > 0 ? (
+                    p1_vt.thuongXuyen.map(row => renderTable1Card(row))
+                  ) : (
+                    <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có nhiệm vụ thường xuyên của Tổ Văn thư</p>
+                  )}
+                </div>
+
+                {/* 2. Bộ phận Chuyển đổi số */}
+                <div className="space-y-2 pl-1 pt-1">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800/60">
+                    <span className="text-xs font-bold text-blue-800 dark:text-blue-300">
+                      2. Tổ CĐS ({p1_cds.txStats.done}/{p1_cds.txStats.total})
+                    </span>
+                    <button
+                      onClick={() => addTable1Row('Thường xuyên', 'CDS')}
+                      className="text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Thêm
+                    </button>
+                  </div>
+                  {p1_cds.thuongXuyen.length > 0 ? (
+                    p1_cds.thuongXuyen.map(row => renderTable1Card(row))
+                  ) : (
+                    <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có nhiệm vụ thường xuyên của Tổ CĐS</p>
+                  )}
+                </div>
+              </div>
+
+              {/* MASTER - NHÓM ĐỘT XUẤT */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="bg-[#cbe6ff]/70 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-slate-700">
+                  <span className="font-extrabold text-xs text-[#005dac] dark:text-blue-300">
+                    II. Đột xuất ({p1_vt.dxStats.done + p1_cds.dxStats.done}/{p1_vt.dxStats.total + p1_cds.dxStats.total} hoàn thành)
+                  </span>
+                </div>
+
+                {/* 1. Bộ phận Văn thư */}
+                <div className="space-y-2 pl-1">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
+                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                      1. Tổ Văn thư ({p1_vt.dxStats.done}/{p1_vt.dxStats.total})
+                    </span>
+                    <button
+                      onClick={() => addTable1Row('Đột xuất', 'VAN_THU')}
+                      className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Thêm
+                    </button>
+                  </div>
+                  {p1_vt.dotXuat.length > 0 ? (
+                    p1_vt.dotXuat.map(row => renderTable1Card(row))
+                  ) : (
+                    <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có nhiệm vụ đột xuất của Tổ Văn thư</p>
+                  )}
+                </div>
+
+                {/* 2. Bộ phận Chuyển đổi số */}
+                <div className="space-y-2 pl-1 pt-1">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800/60">
+                    <span className="text-xs font-bold text-blue-800 dark:text-blue-300">
+                      2. Tổ CĐS ({p1_cds.dxStats.done}/{p1_cds.dxStats.total})
+                    </span>
+                    <button
+                      onClick={() => addTable1Row('Đột xuất', 'CDS')}
+                      className="text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Thêm
+                    </button>
+                  </div>
+                  {p1_cds.dotXuat.length > 0 ? (
+                    p1_cds.dotXuat.map(row => renderTable1Card(row))
+                  ) : (
+                    <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có nhiệm vụ đột xuất của Tổ CĐS</p>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            /* BÁO CÁO ĐƠN HOẶC SOI 1 TỔ */
+            <>
+              {/* I. THƯỜNG XUYÊN */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[#f2f3fc] dark:bg-slate-800/80 rounded-lg border border-[#c1c6d4]/50 dark:border-slate-700">
+                  <span className="font-extrabold text-xs text-[#005dac] dark:text-blue-300">
+                    I. Nhiệm vụ thường xuyên ({p1_active.txStats.done}/{p1_active.txStats.total} xong)
+                  </span>
+                  <button
+                    onClick={() => addTable1Row('Thường xuyên')}
+                    className="text-[11px] font-bold text-[#005dac] dark:text-blue-300 bg-white dark:bg-slate-700 px-2 py-0.5 rounded border border-[#005dac]/30 dark:border-slate-600 flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Thêm việc
+                  </button>
+                </div>
+                {p1_active.thuongXuyen.length > 0 ? (
+                  p1_active.thuongXuyen.map(row => renderTable1Card(row))
+                ) : (
+                  <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có nhiệm vụ thường xuyên nào.</p>
+                )}
+              </div>
+
+              {/* II. ĐỘT XUẤT */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[#f2f3fc] dark:bg-slate-800/80 rounded-lg border border-[#c1c6d4]/50 dark:border-slate-700">
+                  <span className="font-extrabold text-xs text-[#005dac] dark:text-blue-300">
+                    II. Nhiệm vụ đột xuất ({p1_active.dxStats.done}/{p1_active.dxStats.total} xong)
+                  </span>
+                  <button
+                    onClick={() => addTable1Row('Đột xuất')}
+                    className="text-[11px] font-bold text-[#005dac] dark:text-blue-300 bg-white dark:bg-slate-700 px-2 py-0.5 rounded border border-[#005dac]/30 dark:border-slate-600 flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Thêm việc
+                  </button>
+                </div>
+                {p1_active.dotXuat.length > 0 ? (
+                  p1_active.dotXuat.map(row => renderTable1Card(row))
+                ) : (
+                  <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có nhiệm vụ đột xuất nào.</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ==================== BẢNG II ==================== */}
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-[#c1c6d4] dark:border-slate-800 overflow-hidden">
-        <div className="bg-[#ffdbc7] dark:bg-gradient-to-r dark:from-amber-950/60 dark:to-slate-800 px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center">
-          <h2 className="font-bold text-lg text-[#311300] dark:text-amber-300 flex items-center gap-2">
-            <ArrowRight className="w-5 h-5 text-[#ba5b00] dark:text-amber-400" />
-            <span>BẢNG II: KẾ HOẠCH THỰC HIỆN TUẦN TIẾP THEO</span>
+        <div className="bg-[#ffdbc7] dark:bg-gradient-to-r dark:from-amber-950/60 dark:to-slate-800 px-3.5 sm:px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center gap-2">
+          <h2 className="font-bold text-base sm:text-lg text-[#311300] dark:text-amber-300 flex items-center gap-2 truncate">
+            <ArrowRight className="w-5 h-5 text-[#ba5b00] dark:text-amber-400 shrink-0" />
+            <span className="truncate">BẢNG II: KẾ HOẠCH THỰC HIỆN TUẦN TIẾP THEO</span>
           </h2>
-          <div className="flex items-center gap-3">
-            <span className="text-xs uppercase font-extrabold tracking-wider text-[#733600] dark:text-amber-300/80">
-              Tuần {tuanTiep} / {nam}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <span className="text-[11px] sm:text-xs uppercase font-extrabold tracking-wider text-[#733600] dark:text-amber-300/80">
+              Tuần {tuanTiep}/{nam}
             </span>
             {!isReadOnly && table2.length > 0 && onClearTable2 && (
               <button
                 onClick={onClearTable2}
-                className="text-xs font-bold text-red-600 dark:text-red-400 bg-white/80 dark:bg-slate-700/80 hover:bg-red-50 dark:hover:bg-red-950/60 px-2.5 py-1 rounded border border-red-200 dark:border-red-900 transition-all flex items-center gap-1 cursor-pointer"
+                className="text-xs font-bold text-red-600 dark:text-red-400 bg-white/80 dark:bg-slate-700/80 hover:bg-red-50 dark:hover:bg-red-950/60 px-2 sm:px-2.5 py-1 rounded border border-red-200 dark:border-red-900 transition-all flex items-center gap-1 cursor-pointer"
                 title="Xóa nhanh tất cả kế hoạch Bảng II"
               >
-                <Trash2 className="w-3.5 h-3.5" /> Xóa Bảng II
+                <Trash2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Xóa Bảng II</span>
               </button>
             )}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* DESKTOP TABLE VIEW (Visible on >= md screens) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#e6e8f0] dark:bg-slate-800/90">
               <tr className="text-xs uppercase text-[#414752] dark:text-slate-300 font-bold border-b border-[#c1c6d4] dark:border-slate-700">
@@ -1173,6 +1940,154 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* MOBILE CARD LIST VIEW (Visible on < md screens) */}
+        <div className="block md:hidden p-3 space-y-3 bg-amber-50/20 dark:bg-slate-950/30">
+          {isConsolidated && activeTeamCode === 'OFFICE_MASTER' ? (
+            <>
+              {/* MASTER - NHÓM THƯỜNG XUYÊN */}
+              <div className="space-y-2">
+                <div className="bg-[#ffdbc7]/70 dark:bg-amber-950/40 px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-800">
+                  <span className="font-extrabold text-xs text-[#ba5b00] dark:text-amber-400">
+                    I. Thường xuyên ({p2_vt.txTotal + p2_cds.txTotal} kế hoạch)
+                  </span>
+                </div>
+
+                {/* 1. Bộ phận Văn thư */}
+                <div className="space-y-2 pl-1">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
+                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                      1. Tổ Văn thư ({p2_vt.txTotal} kế hoạch)
+                    </span>
+                    <button
+                      onClick={() => addTable2Row('Thường xuyên', 'VAN_THU')}
+                      className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Thêm
+                    </button>
+                  </div>
+                  {p2_vt.thuongXuyen.length > 0 ? (
+                    p2_vt.thuongXuyen.map(row => renderTable2Card(row))
+                  ) : (
+                    <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có kế hoạch thường xuyên của Tổ Văn thư</p>
+                  )}
+                </div>
+
+                {/* 2. Bộ phận Chuyển đổi số */}
+                <div className="space-y-2 pl-1 pt-1">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800/60">
+                    <span className="text-xs font-bold text-blue-800 dark:text-blue-300">
+                      2. Tổ CĐS ({p2_cds.txTotal} kế hoạch)
+                    </span>
+                    <button
+                      onClick={() => addTable2Row('Thường xuyên', 'CDS')}
+                      className="text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Thêm
+                    </button>
+                  </div>
+                  {p2_cds.thuongXuyen.length > 0 ? (
+                    p2_cds.thuongXuyen.map(row => renderTable2Card(row))
+                  ) : (
+                    <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có kế hoạch thường xuyên của Tổ CĐS</p>
+                  )}
+                </div>
+              </div>
+
+              {/* MASTER - NHÓM ĐỘT XUẤT */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="bg-[#ffdbc7]/70 dark:bg-amber-950/40 px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-800">
+                  <span className="font-extrabold text-xs text-[#ba5b00] dark:text-amber-400">
+                    II. Đột xuất ({p2_vt.dxTotal + p2_cds.dxTotal} kế hoạch)
+                  </span>
+                </div>
+
+                {/* 1. Bộ phận Văn thư */}
+                <div className="space-y-2 pl-1">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
+                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                      1. Tổ Văn thư ({p2_vt.dxTotal} kế hoạch)
+                    </span>
+                    <button
+                      onClick={() => addTable2Row('Đột xuất', 'VAN_THU')}
+                      className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Thêm
+                    </button>
+                  </div>
+                  {p2_vt.dotXuat.length > 0 ? (
+                    p2_vt.dotXuat.map(row => renderTable2Card(row))
+                  ) : (
+                    <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có kế hoạch đột xuất của Tổ Văn thư</p>
+                  )}
+                </div>
+
+                {/* 2. Bộ phận Chuyển đổi số */}
+                <div className="space-y-2 pl-1 pt-1">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800/60">
+                    <span className="text-xs font-bold text-blue-800 dark:text-blue-300">
+                      2. Tổ CĐS ({p2_cds.dxTotal} kế hoạch)
+                    </span>
+                    <button
+                      onClick={() => addTable2Row('Đột xuất', 'CDS')}
+                      className="text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Thêm
+                    </button>
+                  </div>
+                  {p2_cds.dotXuat.length > 0 ? (
+                    p2_cds.dotXuat.map(row => renderTable2Card(row))
+                  ) : (
+                    <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có kế hoạch đột xuất của Tổ CĐS</p>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            /* BÁO CÁO ĐƠN HOẶC SOI 1 TỔ */
+            <>
+              {/* I. THƯỜNG XUYÊN */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[#fff3ec] dark:bg-amber-950/20 rounded-lg border border-[#c1c6d4]/50 dark:border-slate-700">
+                  <span className="font-extrabold text-xs text-[#ba5b00] dark:text-amber-400">
+                    I. Kế hoạch thường xuyên ({p2_active.txTotal} kế hoạch)
+                  </span>
+                  <button
+                    onClick={() => addTable2Row('Thường xuyên')}
+                    className="text-[11px] font-bold text-[#ba5b00] dark:text-amber-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-[#ba5b00]/30 dark:border-amber-700/50 flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Thêm việc
+                  </button>
+                </div>
+                {p2_active.thuongXuyen.length > 0 ? (
+                  p2_active.thuongXuyen.map(row => renderTable2Card(row))
+                ) : (
+                  <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có kế hoạch thường xuyên nào.</p>
+                )}
+              </div>
+
+              {/* II. ĐỘT XUẤT */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[#fff3ec] dark:bg-amber-950/20 rounded-lg border border-[#c1c6d4]/50 dark:border-slate-700">
+                  <span className="font-extrabold text-xs text-[#ba5b00] dark:text-amber-400">
+                    II. Kế hoạch đột xuất ({p2_active.dxTotal} kế hoạch)
+                  </span>
+                  <button
+                    onClick={() => addTable2Row('Đột xuất')}
+                    className="text-[11px] font-bold text-[#ba5b00] dark:text-amber-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-[#ba5b00]/30 dark:border-amber-700/50 flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Thêm việc
+                  </button>
+                </div>
+                {p2_active.dotXuat.length > 0 ? (
+                  p2_active.dotXuat.map(row => renderTable2Card(row))
+                ) : (
+                  <p className="text-xs italic text-slate-400 px-2 py-1">Chưa có kế hoạch đột xuất nào.</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ==================== MỤC III & IV (TRỰC TIẾP TRÊN MÀN HÌNH NHẬP LIỆU) ==================== */}
@@ -1180,17 +2095,18 @@ export const TableEditor: React.FC<TableEditorProps> = ({
         <div className="space-y-6 pt-2">
           {/* MỤC III: BẢNG KIỂM TRA THỂ THỨC 6 PHÒNG */}
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs border border-[#c1c6d4] dark:border-slate-800 overflow-hidden">
-            <div className="bg-emerald-100 dark:bg-emerald-950/60 px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center">
-              <h2 className="font-bold text-lg text-emerald-900 dark:text-emerald-300 flex items-center gap-2">
-                <FileCheck className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
-                <span>MỤC III: KẾT QUẢ KIỂM TRA THỂ THỨC VÀ CHÍNH TẢ CÔNG VĂN PHÁT HÀNH</span>
+            <div className="bg-emerald-100 dark:bg-emerald-950/60 px-3.5 sm:px-6 py-3 border-b border-[#c1c6d4] dark:border-slate-700 flex justify-between items-center gap-2">
+              <h2 className="font-bold text-base sm:text-lg text-emerald-900 dark:text-emerald-300 flex items-center gap-2 truncate">
+                <FileCheck className="w-5 h-5 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                <span className="truncate">MỤC III: KIỂM TRA THỂ THỨC CÔNG VĂN</span>
               </h2>
-              <span className="text-xs font-bold bg-white/80 dark:bg-slate-800 px-2.5 py-1 rounded text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-slate-700">
-                6 Phòng ban được kiểm tra
+              <span className="text-[11px] sm:text-xs font-bold bg-white/80 dark:bg-slate-800 px-2 sm:px-2.5 py-1 rounded text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-slate-700 shrink-0">
+                6 Phòng ban
               </span>
             </div>
 
-            <div className="p-4 overflow-x-auto">
+            {/* DESKTOP VIEW (>= md) */}
+            <div className="hidden md:block p-4 overflow-x-auto">
               <table className="w-full text-left border-collapse text-sm">
                 <thead className="bg-[#e6e8f0] dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-300 dark:border-slate-700">
                   <tr>
@@ -1261,6 +2177,75 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 </tbody>
               </table>
             </div>
+
+            {/* MOBILE CARD VIEW (< md) */}
+            <div className="block md:hidden p-3 space-y-2.5">
+              {activeStatsList.map((item, idx) => (
+                <div key={idx} className="bg-slate-50 dark:bg-slate-800/80 rounded-xl p-3 border border-emerald-200/80 dark:border-slate-700 shadow-2xs space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+                    <span className="font-bold text-xs text-slate-800 dark:text-slate-100">{item.department_name}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-200 dark:border-slate-700">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">Tổng VB:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        disabled={isReadOnly}
+                        value={item.total_checked}
+                        onChange={(e) => {
+                          if (!setDocInspectionStats) return;
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          const updated = [...activeStatsList];
+                          updated[idx] = { ...updated[idx], total_checked: val };
+                          setDocInspectionStats(updated);
+                        }}
+                        className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg py-1 px-1.5 text-center font-bold text-xs text-emerald-700 dark:text-emerald-400"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">Số lỗi:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        disabled={isReadOnly}
+                        value={item.error_count}
+                        onChange={(e) => {
+                          if (!setDocInspectionStats) return;
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          const updated = [...activeStatsList];
+                          updated[idx] = { ...updated[idx], error_count: val };
+                          setDocInspectionStats(updated);
+                        }}
+                        className={`w-full bg-white dark:bg-slate-800 border rounded-lg py-1 px-1.5 text-center font-bold text-xs ${
+                          item.error_count > 0 ? 'border-rose-400 text-rose-600 dark:text-rose-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-0.5">Số trang:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        disabled={isReadOnly}
+                        value={item.total_pages ?? 0}
+                        onChange={(e) => {
+                          if (!setDocInspectionStats) return;
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          const updated = [...activeStatsList];
+                          updated[idx] = { ...updated[idx], total_pages: val };
+                          setDocInspectionStats(updated);
+                        }}
+                        className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg py-1 px-1.5 text-center font-bold text-xs text-sky-700 dark:text-sky-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* MỤC IV: KHÓ KHĂN & ĐỀ XUẤT KIẾN NGHỊ & 4 CHỮ KÝ */}
@@ -1272,7 +2257,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               </h2>
             </div>
 
-            <div className="p-6 space-y-6">
+            <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-6">
               {/* Nội dung Khó khăn vướng mắc */}
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
@@ -1288,7 +2273,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                     }
                   }}
                   placeholder="- Ghi rõ các khó khăn vướng mắc phát sinh trong tuần (Ví dụ: Chuyên viên đi học, hồ sơ chưa nộp về Văn thư...)"
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-base sm:text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
               </div>
 
@@ -1309,84 +2294,174 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       }));
                     }
                   }}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-base sm:text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
               </div>
 
               {/* 4 Chữ ký phê duyệt */}
-              <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-                <h4 className="text-sm font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-2">
-                  <span>Ma trận 4 Chữ ký Phê duyệt (Chuẩn Nghị định 30):</span>
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-600 dark:text-slate-400">1. Ý kiến Tổ trưởng:</label>
-                    <input
-                      type="text"
-                      disabled={isReadOnly}
-                      value={consolidatedMeta?.to_truong_name || 'Trần Thuận Hòa'}
-                      onChange={(e) => {
-                        if (setConsolidatedMeta) {
-                          setConsolidatedMeta(prev => ({ ...prev, to_truong_name: e.target.value }));
-                        }
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
-                    />
+              <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
+                  <h4 className="text-sm font-bold text-indigo-950 dark:text-indigo-300 flex items-center gap-2">
+                    <PenTool className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>Ma trận 4 Chữ ký Phê duyệt (Chuẩn Nghị định 30):</span>
+                  </h4>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 w-fit">
+                    Đồng bộ tự động vào Chân trang Báo cáo & File Word
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+                  {/* Vị trí 1: Tổ trưởng */}
+                  <div className="bg-slate-50/90 dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs space-y-2 flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-600 transition-all">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <span className="w-4 h-4 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[10px] font-extrabold flex items-center justify-center shrink-0">1</span>
+                          Ý kiến Tổ trưởng
+                        </span>
+                        <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          Ký nháy
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-1.5 leading-tight">Xác nhận số liệu chuyên môn của Tổ</p>
+                    </div>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        disabled={isReadOnly}
+                        value={consolidatedMeta?.to_truong_name || 'Trần Thuận Hòa'}
+                        placeholder="Họ và tên Tổ trưởng..."
+                        onChange={(e) => {
+                          if (setConsolidatedMeta) {
+                            setConsolidatedMeta(prev => ({ ...prev, to_truong_name: e.target.value }));
+                          }
+                        }}
+                        className="w-full pl-8 pr-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-600 dark:text-slate-400">2. Người lập báo cáo:</label>
-                    <input
-                      type="text"
-                      disabled={isReadOnly}
-                      value={consolidatedMeta?.nguoi_lap_name || metadata?.nguoi_lap || ''}
-                      onChange={(e) => {
-                        if (setConsolidatedMeta) {
-                          setConsolidatedMeta(prev => ({ ...prev, nguoi_lap_name: e.target.value }));
-                        }
-                        if (setMetadata) {
-                          setMetadata(prev => ({ ...prev, nguoi_lap: e.target.value }));
-                        }
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
-                    />
+                  {/* Vị trí 2: Người lập báo cáo */}
+                  <div className="bg-slate-50/90 dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs space-y-2 flex flex-col justify-between hover:border-emerald-300 dark:hover:border-emerald-600 transition-all">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <span className="w-4 h-4 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-extrabold flex items-center justify-center shrink-0">2</span>
+                          Người lập báo cáo
+                        </span>
+                        <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          Người lập
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-1.5 leading-tight">Chịu trách nhiệm tổng hợp nội dung</p>
+                    </div>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        disabled={isReadOnly}
+                        value={consolidatedMeta?.nguoi_lap_name || metadata?.nguoi_lap || ''}
+                        placeholder="Họ và tên người lập biểu..."
+                        onChange={(e) => {
+                          if (setConsolidatedMeta) {
+                            setConsolidatedMeta(prev => ({ ...prev, nguoi_lap_name: e.target.value }));
+                          }
+                          if (setMetadata) {
+                            setMetadata(prev => ({ ...prev, nguoi_lap: e.target.value }));
+                          }
+                        }}
+                        className="w-full pl-8 pr-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-600 dark:text-slate-400">3. Ý kiến Phó Chánh VP:</label>
-                    <input
-                      type="text"
-                      disabled={isReadOnly}
-                      value={consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng'}
-                      onChange={(e) => {
-                        if (setConsolidatedMeta) {
-                          setConsolidatedMeta(prev => ({ ...prev, pho_chanh_van_phong_name: e.target.value }));
-                        }
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
-                    />
+                  {/* Vị trí 3: Phó Chánh Văn phòng */}
+                  <div className="bg-slate-50/90 dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs space-y-2 flex flex-col justify-between hover:border-purple-300 dark:hover:border-purple-600 transition-all">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <span className="w-4 h-4 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[10px] font-extrabold flex items-center justify-center shrink-0">3</span>
+                          Ý kiến Phó Chánh VP
+                        </span>
+                        <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                          Lãnh đạo VP
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-1.5 leading-tight">Kiểm tra và trình duyệt cấp trên</p>
+                    </div>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                        <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        disabled={isReadOnly}
+                        value={consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng'}
+                        placeholder="Họ và tên Phó Chánh VP..."
+                        onChange={(e) => {
+                          if (setConsolidatedMeta) {
+                            setConsolidatedMeta(prev => ({ ...prev, pho_chanh_van_phong_name: e.target.value }));
+                          }
+                        }}
+                        className="w-full pl-8 pr-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-600 dark:text-slate-400">4. Ý kiến Chánh VP:</label>
-                    <input
-                      type="text"
-                      disabled={isReadOnly}
-                      value={consolidatedMeta?.chanh_van_phong_name || 'Hoàng Văn Dương'}
-                      onChange={(e) => {
-                        if (setConsolidatedMeta) {
-                          setConsolidatedMeta(prev => ({ ...prev, chanh_van_phong_name: e.target.value }));
-                        }
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
-                    />
+                  {/* Vị trí 4: Chánh Văn phòng */}
+                  <div className="bg-slate-50/90 dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs space-y-2 flex flex-col justify-between hover:border-amber-300 dark:hover:border-amber-600 transition-all">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <span className="w-4 h-4 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 text-[10px] font-extrabold flex items-center justify-center shrink-0">4</span>
+                          Ý kiến Chánh VP
+                        </span>
+                        <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                          Thủ trưởng
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-1.5 leading-tight">Phê duyệt ban hành báo cáo</p>
+                    </div>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                        <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        disabled={isReadOnly}
+                        value={consolidatedMeta?.chanh_van_phong_name || 'Hoàng Văn Dương'}
+                        placeholder="Họ và tên Chánh VP..."
+                        onChange={(e) => {
+                          if (setConsolidatedMeta) {
+                            setConsolidatedMeta(prev => ({ ...prev, chanh_van_phong_name: e.target.value }));
+                          }
+                        }}
+                        className="w-full pl-8 pr-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+                      />
+                    </div>
                   </div>
+                </div>
+
+                {/* Ghi chú chân trang hỗ trợ */}
+                <div className="mt-3 p-3 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-xl border border-indigo-200/60 dark:border-indigo-900/50 flex items-center gap-2 text-xs text-indigo-900 dark:text-indigo-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>
+                    Họ tên 4 vị trí trên sẽ xuất hiện tại phần khối chữ ký trang cuối của Báo cáo Tuần Tổng hợp theo đúng quy cách Nghị định 30/2020/NĐ-CP.
+                  </span>
                 </div>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* KHOẢNG ĐỆM AN TOÀN CHÂN TRANG ĐẢM BẢO CUỘN MƯỢT MÀ KHÔNG BỊ THANH TRẠNG THÁI CHE */}
+      <div className="h-16 lg:h-24 w-full shrink-0 select-none pointer-events-none" aria-hidden="true" />
 
       {confirmModalConfig && (
         <ConfirmModal

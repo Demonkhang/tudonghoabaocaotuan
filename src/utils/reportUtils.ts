@@ -9,6 +9,7 @@ export interface TaskTable1 {
   file_original_name?: string;
   nhom: 'Thường xuyên' | 'Đột xuất';
   isEdited?: boolean;
+  is_pinned?: boolean;
   is_starred?: boolean;
   is_recurring?: boolean;
   is_directive_task?: boolean;
@@ -25,6 +26,7 @@ export interface TaskTable2 {
   san_pham_du_kien: string;
   nhom: 'Thường xuyên' | 'Đột xuất';
   isEdited?: boolean;
+  is_pinned?: boolean;
   is_starred?: boolean;
   is_recurring?: boolean;
   team_code?: 'VAN_THU' | 'CDS';
@@ -144,6 +146,10 @@ export function isRoutineTime(timeStr: string | undefined | null): boolean {
     lower.includes('thuong xuyen') ||
     lower.includes('trong tuần') ||
     lower.includes('trong tuan') ||
+    lower.includes('hàng tuần') ||
+    lower.includes('hang tuan') ||
+    lower.includes('định kỳ') ||
+    lower.includes('dinh ky') ||
     lower.includes('chưa nhập') ||
     lower === ''
   ) {
@@ -166,8 +172,15 @@ export function parseVietDate(str: string | undefined | null): number | null {
   return null;
 }
 
-export function sortTasksByTime<T extends { thoi_gian?: string; thoi_gian_du_kien?: string }>(tasks: T[]): T[] {
+export function sortTasksByTime<T extends { thoi_gian?: string; thoi_gian_du_kien?: string; is_pinned?: boolean }>(tasks: T[]): T[] {
   return [...tasks].sort((a, b) => {
+    // 1. Ghim trục trọng tâm: mặc định ở phía trên cùng
+    const pinA = Boolean(a.is_pinned);
+    const pinB = Boolean(b.is_pinned);
+    if (pinA && !pinB) return -1;
+    if (!pinA && pinB) return 1;
+
+    // 2. Cái nào là thường xuyên thì đưa xuống dưới
     const timeA = a.thoi_gian || a.thoi_gian_du_kien || '';
     const timeB = b.thoi_gian || b.thoi_gian_du_kien || '';
 
@@ -177,6 +190,7 @@ export function sortTasksByTime<T extends { thoi_gian?: string; thoi_gian_du_kie
     if (!routineA && routineB) return -1;
     if (routineA && !routineB) return 1;
 
+    // 3. Sắp xếp theo ngày tăng dần nếu cả 2 có ngày cụ thể
     if (!routineA && !routineB) {
       const dateA = parseVietDate(timeA);
       const dateB = parseVietDate(timeB);

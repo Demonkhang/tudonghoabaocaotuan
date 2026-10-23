@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ReportMetadata, TaskTable1, TaskTable2 } from './reportUtils';
+import { ReportMetadata, TaskTable1, TaskTable2, sortTasksByTime } from './reportUtils';
 
 /**
  * Xuất dữ liệu Báo cáo Tuần (BẢNG I & BẢNG II) ra tệp Excel (.xlsx)
@@ -12,11 +12,11 @@ export function exportReportToExcel(
 ) {
   const wb = XLSX.utils.book_new();
 
-  const thuongXuyenT1 = table1.filter(t => (t.nhom || 'Thường xuyên') === 'Thường xuyên');
-  const dotXuatT1 = table1.filter(t => t.nhom === 'Đột xuất');
+  const thuongXuyenT1 = sortTasksByTime(table1.filter(t => (t.nhom || 'Thường xuyên') === 'Thường xuyên'));
+  const dotXuatT1 = sortTasksByTime(table1.filter(t => t.nhom === 'Đột xuất'));
 
-  const thuongXuyenT2 = table2.filter(t => (t.nhom || 'Thường xuyên') === 'Thường xuyên');
-  const dotXuatT2 = table2.filter(t => t.nhom === 'Đột xuất');
+  const thuongXuyenT2 = sortTasksByTime(table2.filter(t => (t.nhom || 'Thường xuyên') === 'Thường xuyên'));
+  const dotXuatT2 = sortTasksByTime(table2.filter(t => t.nhom === 'Đột xuất'));
 
   const sheetData: any[][] = [];
 
