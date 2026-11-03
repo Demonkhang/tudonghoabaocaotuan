@@ -1009,7 +1009,8 @@ export function createConsolidatedOfficeDocx(data) {
     }))
   };
 
-  const zip = createConsolidatedDocxZipTemplate();
+  const showPhoChanhVp = meta.show_pho_chanh_vp !== false && meta.show_pho_chanh_vp !== 0;
+  const zip = createConsolidatedDocxZipTemplate(showPhoChanhVp);
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
@@ -1020,7 +1021,7 @@ export function createConsolidatedOfficeDocx(data) {
   return doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
-function createConsolidatedDocxZipTemplate() {
+function createConsolidatedDocxZipTemplate(showPhoChanhVp = true) {
   const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <w:body>
@@ -1352,11 +1353,11 @@ function createConsolidatedDocxZipTemplate() {
         <w:trPr><w:trHeight w:val="2200" w:hRule="atLeast"/></w:trPr>
         <w:tc><w:tcPr><w:tcW w:w="4677" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="120" w:after="1600"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Ý kiến của Tổ trưởng</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>{to_truong_name}</w:t></w:r></w:p></w:tc>
         <w:tc><w:tcPr><w:tcW w:w="4678" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="120" w:after="1600"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Người lập báo cáo</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>{nguoi_lap_name}</w:t></w:r></w:p></w:tc>
-      </w:tr>
+      </w:tr>${showPhoChanhVp ? `
       <w:tr>
         <w:trPr><w:trHeight w:val="2200" w:hRule="atLeast"/></w:trPr>
         <w:tc><w:tcPr><w:gridSpan w:val="2"/><w:tcW w:w="9355" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="120" w:after="1600"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Ý kiến của Phó Chánh Văn phòng</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>{pho_chanh_van_phong_name}</w:t></w:r></w:p></w:tc>
-      </w:tr>
+      </w:tr>` : ''}
       <w:tr>
         <w:trPr><w:trHeight w:val="2200" w:hRule="atLeast"/></w:trPr>
         <w:tc><w:tcPr><w:gridSpan w:val="2"/><w:tcW w:w="9355" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="120" w:after="1600"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>Ý kiến của Chánh Văn phòng</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:sz w:val="26"/><w:color w:val="000000"/></w:rPr><w:t>{chanh_van_phong_name}</w:t></w:r></w:p></w:tc>

@@ -23,6 +23,7 @@ import { ConfirmModal, ConfirmModalProps } from './components/ConfirmModal';
 import { SignatureSetupModal } from './components/SignatureSetupModal';
 import { ApprovalChainModal } from './components/ApprovalChainModal';
 import { DigitalSignatureModal } from './components/DigitalSignatureModal';
+import { MonthlyReportModal } from './components/MonthlyReportModal';
 import { fetchReportSignaturesApi } from './services/api';
 import { FileSpreadsheet, Upload, Download, Sparkles, CheckCircle, History, PlusCircle, Layout } from 'lucide-react';
 import {
@@ -198,10 +199,12 @@ export default function App() {
       nguoi_lap_name: savedUser?.full_name || '',
       pho_chanh_van_phong_name: 'Nguyễn Đức Thắng',
       chanh_van_phong_name: 'Hoàng Văn Dương',
-      ending_note: 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.'
+      ending_note: 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.',
+      show_pho_chanh_vp: true
     };
   });
   const [isDocInspectionModalOpen, setIsDocInspectionModalOpen] = useState<boolean>(false);
+  const [isMonthlyReportOpen, setIsMonthlyReportOpen] = useState<boolean>(false);
 
   // Main navigation view tab state: 'dashboard' (Trang chủ) | 'editor' (Soạn báo cáo)
   const [activeMainTab, setActiveMainTab] = useState<'dashboard' | 'editor'>('dashboard');
@@ -556,7 +559,8 @@ export default function App() {
         nguoi_lap_name: finalNguoiLap,
         pho_chanh_van_phong_name: metaObj.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng',
         chanh_van_phong_name: metaObj.chanh_van_phong_name || 'Hoàng Văn Dương',
-        ending_note: metaObj.ending_note || 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.'
+        ending_note: metaObj.ending_note || 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.',
+        show_pho_chanh_vp: metaObj.show_pho_chanh_vp !== false && metaObj.show_pho_chanh_vp !== 0
       });
       const rId = data.metadata?.report_id || (currentUser?.id ? `rpt_consolidated_office_${currentUser.id}_w${week}_${year}` : `rpt_consolidated_office_w${week}_${year}`);
       fetchReportSignaturesApi(rId).then(sigRes => {
@@ -1220,149 +1224,150 @@ export default function App() {
             onOpenSignatureSetup={() => setIsSignatureSetupOpen(true)}
             onOpenApprovalChain={() => setIsApprovalChainOpen(true)}
             onOpenDigitalSignature={() => setIsDigitalSignatureOpen(true)}
+            onOpenMonthlyReport={() => setIsMonthlyReportOpen(true)}
           />
 
           {/* NỘI DUNG CHÍNH (Layout Grid Editor) */}
           <main className="flex-1 overflow-y-auto lg:overflow-hidden flex flex-col lg:grid lg:grid-cols-12 gap-0 relative min-h-0">
-        {!hasLoadedData ? (
-          /* Màn hình khởi tạo chưa có dữ liệu */
-          <div className="col-span-12 flex flex-col items-center justify-center p-4 sm:p-8 bg-slate-50/80 dark:bg-slate-950/90 overflow-y-auto transition-colors duration-300">
-            <div className="max-w-4xl w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-4 sm:p-8 space-y-6 text-center transition-colors duration-300">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 dark:bg-slate-800 text-[#005dac] dark:text-blue-400 border border-blue-100 dark:border-slate-700 shadow-2xs mb-2">
-                <FileSpreadsheet className="w-8 h-8" />
+            {!hasLoadedData ? (
+              /* Màn hình khởi tạo chưa có dữ liệu */
+              <div className="col-span-12 flex flex-col items-center justify-center p-4 sm:p-8 bg-slate-50/80 dark:bg-slate-950/90 overflow-y-auto transition-colors duration-300">
+                <div className="max-w-4xl w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-4 sm:p-8 space-y-6 text-center transition-colors duration-300">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 dark:bg-slate-800 text-[#005dac] dark:text-blue-400 border border-blue-100 dark:border-slate-700 shadow-2xs mb-2">
+                    <FileSpreadsheet className="w-8 h-8" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-extrabold text-[#001e30] dark:text-white tracking-tight">
+                      BÁO CÁO TUẦN {metadata.tuan}/{metadata.nam} - {currentUser?.department_name || 'ĐƠN VỊ'}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl mx-auto leading-relaxed">
+                      Chưa có dữ liệu báo cáo cho tuần này. Bạn có thể tạo báo cáo mới, lập kế hoạch dạng Kanban kéo thả, kế thừa nhiệm vụ dở dang từ tuần trước hoặc import từ tệp Excel.
+                    </p>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 max-w-3xl mx-auto pt-2">
+                    <button
+                      onClick={handleStartBlankReport}
+                      className="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-blue-600 to-[#005dac] hover:from-blue-700 hover:to-[#004786] text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] group"
+                    >
+                      <PlusCircle className="w-6 h-6 text-blue-100 mb-1.5 group-hover:scale-110 transition-transform" />
+                      <span className="font-bold text-xs">📝 Tạo Báo Cáo Mới</span>
+                      <span className="text-[10px] text-blue-100 mt-0.5">Soạn thảo trắng sạch</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsKanbanPlannerOpen(true)}
+                      className="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] group"
+                    >
+                      <Layout className="w-6 h-6 text-purple-200 mb-1.5 group-hover:scale-110 transition-transform" />
+                      <span className="font-bold text-xs">🎯 Kế Hoạch Kanban</span>
+                      <span className="text-[10px] text-purple-200 mt-0.5">Phân loại kéo thả mượt mà</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsCarryOverOpen(true)}
+                      className="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] group"
+                    >
+                      <Sparkles className="w-6 h-6 text-amber-100 mb-1.5 group-hover:scale-110 transition-transform" />
+                      <span className="font-bold text-xs">⚡ Kế thừa Nhiệm vụ</span>
+                      <span className="text-[10px] text-amber-100 mt-0.5">Lấy việc dở dang tuần trước</span>
+                    </button>
+
+                    <label className="flex flex-col items-center justify-center p-4 bg-slate-800 hover:bg-slate-900 text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] group">
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            handleImportFile(e.target.files[0]);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <Upload className="w-6 h-6 text-amber-300 mb-1.5 group-hover:bounce" />
+                      <span className="font-bold text-xs">Import File Excel</span>
+                      <span className="text-[10px] text-slate-300 mt-0.5">Đọc &amp; điền Form Word</span>
+                    </label>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-center gap-4 text-xs">
+                    <button
+                      onClick={downloadExcelTemplate}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-all font-medium cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-emerald-600" />
+                      Tải Mẫu File Excel chuẩn (.xlsx)
+                    </button>
+
+                    <button
+                      onClick={handleLoadSampleData}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg border border-amber-200 transition-all font-medium cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-600" />
+                      Nạp Dữ Liệu Thử Nghiệm (Demo)
+                    </button>
+                  </div>
+                </div>
               </div>
+            ) : (
+              /* MÀN HÌNH CHÍNH CÓ DỮ LIỆU */
+              <>
+                <TableEditor
+                  table1={table1}
+                  setTable1={setTable1}
+                  table2={table2}
+                  setTable2={setTable2}
+                  currentUser={currentUser}
+                  highlightedRowId={highlightedRowId}
+                  tuan={metadata.tuan}
+                  tuanTiep={metadata.tuan_tiep}
+                  nam={metadata.nam}
+                  isReadOnly={userPermission === 'VIEW'}
+                  onOpenProofModal={(row) => setPendingMainProofTask(row)}
+                  onOpenDetailModal={(row, mode) => {
+                    setActiveMainDetailTask({
+                      id: row.id,
+                      noi_dung: row.noi_dung,
+                      nhom: row.nhom,
+                      thoi_gian: row.thoi_gian,
+                      trien_khai: row.trien_khai,
+                      tien_do: row.tien_do,
+                      san_pham: row.san_pham,
+                      file_minh_chung: row.file_minh_chung,
+                      file_original_name: row.file_original_name,
+                      source: 'unfinished_table1'
+                    });
+                    setActiveMainDetailMode(mode);
+                  }}
+                  onClearTable1={handleClearTable1}
+                  onClearTable2={handleClearTable2}
+                  reportType={reportType}
+                  activeTeamCode={activeTeamCode}
+                  docInspectionStats={docInspectionStats}
+                  setDocInspectionStats={setDocInspectionStats}
+                  consolidatedMeta={consolidatedMeta}
+                  setConsolidatedMeta={setConsolidatedMeta}
+                  metadata={metadata}
+                  setMetadata={setMetadata}
+                  onSaveReport={handleSaveReport}
+                />
 
-              <div>
-                <h2 className="text-xl font-extrabold text-[#001e30] dark:text-white tracking-tight">
-                  BÁO CÁO TUẦN {metadata.tuan}/{metadata.nam} - {currentUser?.department_name || 'ĐƠN VỊ'}
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl mx-auto leading-relaxed">
-                  Chưa có dữ liệu báo cáo cho tuần này. Bạn có thể tạo báo cáo mới, lập kế hoạch dạng Kanban kéo thả, kế thừa nhiệm vụ dở dang từ tuần trước hoặc import từ tệp Excel.
-                </p>
-              </div>
+                <ValidationPanel
+                  errors={validationErrors}
+                  onScrollToRow={handleScrollToRow}
+                  table1={table1}
+                />
+              </>
+            )}
+          </main>
 
-              {/* Action buttons */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 max-w-3xl mx-auto pt-2">
-                <button
-                  onClick={handleStartBlankReport}
-                  className="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-blue-600 to-[#005dac] hover:from-blue-700 hover:to-[#004786] text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] group"
-                >
-                  <PlusCircle className="w-6 h-6 text-blue-100 mb-1.5 group-hover:scale-110 transition-transform" />
-                  <span className="font-bold text-xs">📝 Tạo Báo Cáo Mới</span>
-                  <span className="text-[10px] text-blue-100 mt-0.5">Soạn thảo trắng sạch</span>
-                </button>
-
-                <button
-                  onClick={() => setIsKanbanPlannerOpen(true)}
-                  className="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] group"
-                >
-                  <Layout className="w-6 h-6 text-purple-200 mb-1.5 group-hover:scale-110 transition-transform" />
-                  <span className="font-bold text-xs">🎯 Kế Hoạch Kanban</span>
-                  <span className="text-[10px] text-purple-200 mt-0.5">Phân loại kéo thả mượt mà</span>
-                </button>
-
-                <button
-                  onClick={() => setIsCarryOverOpen(true)}
-                  className="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] group"
-                >
-                  <Sparkles className="w-6 h-6 text-amber-100 mb-1.5 group-hover:scale-110 transition-transform" />
-                  <span className="font-bold text-xs">⚡ Kế thừa Nhiệm vụ</span>
-                  <span className="text-[10px] text-amber-100 mt-0.5">Lấy việc dở dang tuần trước</span>
-                </button>
-
-                <label className="flex flex-col items-center justify-center p-4 bg-slate-800 hover:bg-slate-900 text-white rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] group">
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        handleImportFile(e.target.files[0]);
-                        e.target.value = '';
-                      }
-                    }}
-                    className="hidden"
-                  />
-                  <Upload className="w-6 h-6 text-amber-300 mb-1.5 group-hover:bounce" />
-                  <span className="font-bold text-xs">Import File Excel</span>
-                  <span className="text-[10px] text-slate-300 mt-0.5">Đọc &amp; điền Form Word</span>
-                </label>
-              </div>
-
-              <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-center gap-4 text-xs">
-                <button
-                  onClick={downloadExcelTemplate}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-all font-medium cursor-pointer"
-                >
-                  <Download className="w-4 h-4 text-emerald-600" />
-                  Tải Mẫu File Excel chuẩn (.xlsx)
-                </button>
-
-                <button
-                  onClick={handleLoadSampleData}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg border border-amber-200 transition-all font-medium cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4 text-amber-600" />
-                  Nạp Dữ Liệu Thử Nghiệm (Demo)
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* MÀN HÌNH CHÍNH CÓ DỮ LIỆU */
-          <>
-            <TableEditor
-              table1={table1}
-              setTable1={setTable1}
-              table2={table2}
-              setTable2={setTable2}
-              currentUser={currentUser}
-              highlightedRowId={highlightedRowId}
-              tuan={metadata.tuan}
-              tuanTiep={metadata.tuan_tiep}
-              nam={metadata.nam}
-              isReadOnly={userPermission === 'VIEW'}
-              onOpenProofModal={(row) => setPendingMainProofTask(row)}
-              onOpenDetailModal={(row, mode) => {
-                setActiveMainDetailTask({
-                  id: row.id,
-                  noi_dung: row.noi_dung,
-                  nhom: row.nhom,
-                  thoi_gian: row.thoi_gian,
-                  trien_khai: row.trien_khai,
-                  tien_do: row.tien_do,
-                  san_pham: row.san_pham,
-                  file_minh_chung: row.file_minh_chung,
-                  file_original_name: row.file_original_name,
-                  source: 'unfinished_table1'
-                });
-                setActiveMainDetailMode(mode);
-              }}
-              onClearTable1={handleClearTable1}
-              onClearTable2={handleClearTable2}
-              reportType={reportType}
-              activeTeamCode={activeTeamCode}
-              docInspectionStats={docInspectionStats}
-              setDocInspectionStats={setDocInspectionStats}
-              consolidatedMeta={consolidatedMeta}
-              setConsolidatedMeta={setConsolidatedMeta}
-              metadata={metadata}
-              setMetadata={setMetadata}
-              onSaveReport={handleSaveReport}
-            />
-
-            <ValidationPanel
-              errors={validationErrors}
-              onScrollToRow={handleScrollToRow}
-              table1={table1}
-            />
-          </>
-        )}
-      </main>
-
-      {/* THANH TRẠNG THÁI CỐ ĐỊNH */}
-      <Footer table1={table1} table2={table2} />
-    </>
-  )}
+          {/* THANH TRẠNG THÁI CỐ ĐỊNH */}
+          <Footer table1={table1} table2={table2} />
+        </>
+      )}
 
       {/* MODAL XEM TRƯỚC / IN / TẢI BÁO CÁO */}
       <PreviewModal
@@ -1522,6 +1527,7 @@ export default function App() {
         year={sharedChoiceData?.year || metadata.nam}
         sharedOwnerName={sharedChoiceData?.ownerName || ''}
         onClose={() => setIsChoiceModalOpen(false)}
+        onOpenMonthlyReport={() => setIsMonthlyReportOpen(true)}
         onSelectConsolidatedReport={(teamCode) => {
           setIsChoiceModalOpen(false);
           loadConsolidatedReport(metadata.tuan, metadata.nam, teamCode);
@@ -1635,6 +1641,14 @@ export default function App() {
           {...confirmModalConfig}
         />
       )}
+
+      {/* MODAL CHỨC NĂNG TẠO BÁO CÁO THÁNG (ĐỘC LẬP 100%) */}
+      <MonthlyReportModal
+        isOpen={isMonthlyReportOpen}
+        onClose={() => setIsMonthlyReportOpen(false)}
+        currentUser={currentUser}
+        defaultYear={metadata.nam}
+      />
     </div>
   );
 }

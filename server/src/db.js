@@ -111,8 +111,31 @@ if (activeMode === 'neon') {
       sqliteDb.exec("ALTER TABLE tasks ADD COLUMN is_pinned SMALLINT DEFAULT 0;");
       console.log("✅ [DB SQLite] Đã tự động thêm cột 'is_pinned' vào bảng tasks");
     }
+    const metaInfo = sqliteDb.prepare("PRAGMA table_info(consolidated_report_meta);").all();
+    if (metaInfo.length > 0 && !metaInfo.some((col) => col.name === 'show_pho_chanh_vp')) {
+      sqliteDb.exec("ALTER TABLE consolidated_report_meta ADD COLUMN show_pho_chanh_vp SMALLINT DEFAULT 1;");
+      console.log("✅ [DB SQLite] Đã tự động thêm cột 'show_pho_chanh_vp' vào bảng consolidated_report_meta");
+    }
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS monthly_reports (
+        id TEXT PRIMARY KEY,
+        department_id TEXT DEFAULT 'dept_vp',
+        account_id TEXT NOT NULL,
+        month INTEGER NOT NULL,
+        year INTEGER NOT NULL,
+        report_number TEXT DEFAULT '',
+        report_date TEXT DEFAULT '',
+        status TEXT DEFAULT 'DRAFT',
+        payload_json TEXT NOT NULL,
+        pho_chanh_vp_name TEXT DEFAULT 'Nguyễn Đức Thắng',
+        nguoi_trinh_name TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(account_id, month, year)
+      );
+    `);
   } catch (err) {
-    console.warn("⚠️ [DB SQLite] Kiểm tra cột is_pinned:", err.message);
+    console.warn("⚠️ [DB SQLite] Kiểm tra cột is_pinned / bảng monthly_reports:", err.message);
   }
   console.log(`🗄️ [DB] Sử dụng SQLite cục bộ: ${path.basename(targetDbPath)} (Độc lập, không ảnh hưởng Vercel hay Docker)`);
 }
@@ -124,6 +147,7 @@ if (activeMode === 'neon' && neonClient) {
     neonClient`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS team_code VARCHAR(30) DEFAULT 'VAN_THU';`,
     neonClient`ALTER TABLE standalone_tasks ADD COLUMN IF NOT EXISTS is_pool_hidden SMALLINT DEFAULT 0;`,
     neonClient`ALTER TABLE consolidated_report_meta ADD COLUMN IF NOT EXISTS ending_note TEXT DEFAULT 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.';`,
+    neonClient`ALTER TABLE consolidated_report_meta ADD COLUMN IF NOT EXISTS show_pho_chanh_vp SMALLINT DEFAULT 1;`,
     neonClient`CREATE TABLE IF NOT EXISTS doc_inspection_stats (
       id TEXT PRIMARY KEY,
       report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
@@ -132,6 +156,22 @@ if (activeMode === 'neon' && neonClient) {
       error_count INTEGER DEFAULT 0,
       total_pages INTEGER DEFAULT 0,
       order_index INTEGER DEFAULT 0
+    );`,
+    neonClient`CREATE TABLE IF NOT EXISTS monthly_reports (
+      id TEXT PRIMARY KEY,
+      department_id TEXT DEFAULT 'dept_vp',
+      account_id TEXT NOT NULL,
+      month INTEGER NOT NULL,
+      year INTEGER NOT NULL,
+      report_number TEXT DEFAULT '',
+      report_date TEXT DEFAULT '',
+      status TEXT DEFAULT 'DRAFT',
+      payload_json TEXT NOT NULL,
+      pho_chanh_vp_name TEXT DEFAULT 'Nguyễn Đức Thắng',
+      nguoi_trinh_name TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(account_id, month, year)
     );`
   ])
     .then(() => console.log("✅ [DB Neon] Đã đảm bảo toàn bộ schema (ending_note, team_code, is_pool_hidden, doc_inspection_stats) sẵn sàng"))

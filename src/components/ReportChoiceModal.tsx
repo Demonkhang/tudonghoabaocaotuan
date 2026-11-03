@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, FileEdit, ArrowRight, ShieldAlert, Sparkles } from 'lucide-react';
+import { Users, FileEdit, ArrowRight, ShieldAlert, Sparkles, Calendar } from 'lucide-react';
 
 interface ReportChoiceModalProps {
   isOpen: boolean;
@@ -9,6 +9,7 @@ interface ReportChoiceModalProps {
   onSelectSharedReport: () => void;
   onSelectPersonalReport: () => void;
   onSelectConsolidatedReport?: (teamCode: 'VAN_THU' | 'CDS' | 'OFFICE_MASTER') => void;
+  onOpenMonthlyReport?: () => void;
   onClose: () => void;
 }
 
@@ -20,6 +21,7 @@ export function ReportChoiceModal({
   onSelectSharedReport,
   onSelectPersonalReport,
   onSelectConsolidatedReport,
+  onOpenMonthlyReport,
   onClose
 }: ReportChoiceModalProps) {
   if (!isOpen) return null;
@@ -139,6 +141,30 @@ export function ReportChoiceModal({
                 Bản Báo cáo Tuần đơn lẻ tiêu chuẩn cho cá nhân/phòng ban độc lập.
               </p>
             </button>
+
+            {/* OPTION 4: MONTHLY OFFICE REPORT (BÁO CÁO THÁNG - ĐỘC LẬP 100%) */}
+            {onOpenMonthlyReport && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenMonthlyReport();
+                }}
+                className="w-full text-left p-4 rounded-xl border border-amber-500/60 bg-gradient-to-r from-amber-950/80 via-slate-900 to-slate-950 hover:border-amber-400 shadow-lg cursor-pointer transition-all hover:scale-[1.01] group space-y-1.5"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-sm text-amber-300 flex items-center gap-2 group-hover:text-amber-200">
+                    <Calendar className="w-4 h-4 text-amber-400" />
+                    4. Tạo Báo Cáo Tháng Văn Phòng (Mẫu 1365/VP)
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                    Báo Cáo Tháng Mới
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Biểu mẫu Báo cáo Tháng chuyên biệt của <strong>Bộ phận Chuyển đổi số và Văn thư, lưu trữ</strong> (Gồm thống kê VB đi/đến, Bảng lỗi thể thức 4 cột, Quyết định, Hồ sơ CTRSH, Nhiệm vụ CĐS &amp; 5 Mục La Mã).
+                </p>
+              </button>
+            )}
           </div>
         </div>
 

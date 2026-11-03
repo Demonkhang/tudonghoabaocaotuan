@@ -529,19 +529,15 @@ export const TableEditor: React.FC<TableEditorProps> = ({
         onDragOver={(e) => handleTable1DragOver(e, row.id)}
         onDrop={(e) => handleTable1Drop(e, row.id)}
         onDragEnd={() => { setDraggedTable1Id(null); setDragOverTable1Id(null); }}
-        className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-all group ${
-          isPinned ? 'border-l-4 border-l-rose-500 bg-rose-50/30 dark:bg-rose-950/20' : ''
-        } ${
-          draggedTable1Id === row.id ? 'opacity-30 bg-blue-100 dark:bg-blue-950' : ''
-        } ${
-          dragOverTable1Id === row.id ? 'border-t-2 border-t-blue-500 bg-blue-50/70 dark:bg-blue-900/40' : ''
-        } ${
-          highlightedRowId === row.id
+        className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-all group ${isPinned ? 'border-l-4 border-l-rose-500 bg-rose-50/30 dark:bg-rose-950/20' : ''
+          } ${draggedTable1Id === row.id ? 'opacity-30 bg-blue-100 dark:bg-blue-950' : ''
+          } ${dragOverTable1Id === row.id ? 'border-t-2 border-t-blue-500 bg-blue-50/70 dark:bg-blue-900/40' : ''
+          } ${highlightedRowId === row.id
             ? 'bg-amber-100 dark:bg-amber-950/70 ring-2 ring-amber-500'
             : row.thoi_gian === 'Chưa nhập'
-            ? 'bg-red-50/70 dark:bg-red-950/40 hover:bg-red-100/80 dark:hover:bg-red-900/50'
-            : 'hover:bg-[#f2f3fc] dark:hover:bg-slate-800/40'
-        }`}
+              ? 'bg-red-50/70 dark:bg-red-950/40 hover:bg-red-100/80 dark:hover:bg-red-900/50'
+              : 'hover:bg-[#f2f3fc] dark:hover:bg-slate-800/40'
+          }`}
       >
         <td className="px-3 py-3 text-center font-bold text-[#414752] dark:text-slate-300 select-none">
           <div className="flex items-center justify-center gap-1 cursor-grab active:cursor-grabbing" title="Cầm kéo để sắp xếp thứ tự nhiệm vụ">
@@ -549,7 +545,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             <span>{row.stt}</span>
           </div>
         </td>
-        
+
         {/* Nội dung Inline Edit */}
         <td className="px-4 py-3 relative">
           <div className="flex flex-col gap-1">
@@ -583,15 +579,13 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               <button
                 type="button"
                 onClick={() => togglePinTable1(row.id)}
-                className={`p-1 rounded transition-colors cursor-pointer shrink-0 ${
-                  isPinned ? 'hover:bg-rose-500/20 text-rose-500' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-500/10'
-                }`}
+                className={`p-1 rounded transition-colors cursor-pointer shrink-0 ${isPinned ? 'hover:bg-rose-500/20 text-rose-500' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-500/10'
+                  }`}
                 title={isPinned ? "Bỏ ghim trục trọng tâm" : "Ghim trục trọng tâm (Mặc định ở phía trên)"}
               >
                 <Pin
-                  className={`w-4 h-4 transition-transform hover:scale-125 ${
-                    isPinned ? 'fill-rose-500 text-rose-500 -rotate-45' : ''
-                  }`}
+                  className={`w-4 h-4 transition-transform hover:scale-125 ${isPinned ? 'fill-rose-500 text-rose-500 -rotate-45' : ''
+                    }`}
                 />
               </button>
 
@@ -602,9 +596,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 title={isStarred ? "Bỏ gắn sao nhiệm vụ lặp lại" : "Đánh sao nhiệm vụ lặp lại / thường xuyên"}
               >
                 <Star
-                  className={`w-4 h-4 transition-transform hover:scale-125 ${
-                    isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
-                  }`}
+                  className={`w-4 h-4 transition-transform hover:scale-125 ${isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
+                    }`}
                 />
               </button>
 
@@ -613,9 +606,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 readOnly={row.is_directive_task}
                 value={row.noi_dung}
                 onChange={e => updateTable1Field(row.id, 'noi_dung', e.target.value)}
-                className={`w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium ${
-                  row.is_directive_task ? 'font-semibold text-purple-900 dark:text-purple-200 cursor-not-allowed' : ''
-                }`}
+                className={`w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded text-slate-800 dark:text-slate-100 font-medium ${row.is_directive_task ? 'font-semibold text-purple-900 dark:text-purple-200 cursor-not-allowed' : ''
+                  }`}
                 title={row.is_directive_task ? 'Nhiệm vụ phân cấp từ cấp trên - không thể sửa tên' : ''}
               />
               {row.isEdited && !row.is_directive_task && (
@@ -634,10 +626,9 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             readOnly={row.is_directive_task}
             value={row.thoi_gian}
             onChange={e => updateTable1Field(row.id, 'thoi_gian', e.target.value)}
-            className={`w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded ${
-              row.is_directive_task ? 'font-bold text-purple-700 dark:text-purple-300 cursor-not-allowed' :
-              row.thoi_gian === 'Chưa nhập' ? 'text-red-600 dark:text-red-400 font-semibold italic' : 'text-slate-700 dark:text-slate-200'
-            }`}
+            className={`w-full bg-transparent border-b border-transparent hover:border-[#717783] dark:hover:border-slate-500 focus:border-[#005dac] dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-hidden px-1 py-0.5 rounded ${row.is_directive_task ? 'font-bold text-purple-700 dark:text-purple-300 cursor-not-allowed' :
+                row.thoi_gian === 'Chưa nhập' ? 'text-red-600 dark:text-red-400 font-semibold italic' : 'text-slate-700 dark:text-slate-200'
+              }`}
             title={row.is_directive_task ? 'Hạn xử lý do Cấp trên ấn định' : ''}
           />
         </td>
@@ -702,12 +693,12 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               const badgeClass = row.tien_do === 'Hoàn thành'
                 ? 'bg-emerald-600 text-white dark:bg-emerald-600'
                 : row.tien_do === 'Đang thực hiện'
-                ? 'bg-[#005dac] text-white dark:bg-blue-600'
-                : row.tien_do === 'Hoàn thành trễ'
-                ? 'bg-amber-600 text-white dark:bg-amber-600'
-                : row.tien_do === 'Chưa thực hiện'
-                ? 'bg-slate-500 text-white dark:bg-slate-600'
-                : 'bg-indigo-600 text-white dark:bg-indigo-600 shadow-xs';
+                  ? 'bg-[#005dac] text-white dark:bg-blue-600'
+                  : row.tien_do === 'Hoàn thành trễ'
+                    ? 'bg-amber-600 text-white dark:bg-amber-600'
+                    : row.tien_do === 'Chưa thực hiện'
+                      ? 'bg-slate-500 text-white dark:bg-slate-600'
+                      : 'bg-indigo-600 text-white dark:bg-indigo-600 shadow-xs';
 
               return (
                 <div className="flex items-center gap-1.5 flex-nowrap">
@@ -814,17 +805,13 @@ export const TableEditor: React.FC<TableEditorProps> = ({
         onDragOver={(e) => handleTable2DragOver(e, row.id)}
         onDrop={(e) => handleTable2Drop(e, row.id)}
         onDragEnd={() => { setDraggedTable2Id(null); setDragOverTable2Id(null); }}
-        className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-all group ${
-          isPinned ? 'border-l-4 border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/20' : ''
-        } ${
-          draggedTable2Id === row.id ? 'opacity-30 bg-amber-100 dark:bg-amber-950' : ''
-        } ${
-          dragOverTable2Id === row.id ? 'border-t-2 border-t-amber-500 bg-amber-50/70 dark:bg-amber-900/40' : ''
-        } ${
-          highlightedRowId === row.id
+        className={`border-b border-[#c1c6d4] dark:border-slate-800 transition-all group ${isPinned ? 'border-l-4 border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/20' : ''
+          } ${draggedTable2Id === row.id ? 'opacity-30 bg-amber-100 dark:bg-amber-950' : ''
+          } ${dragOverTable2Id === row.id ? 'border-t-2 border-t-amber-500 bg-amber-50/70 dark:bg-amber-900/40' : ''
+          } ${highlightedRowId === row.id
             ? 'bg-amber-100 dark:bg-amber-950/70 ring-2 ring-amber-500'
             : 'hover:bg-[#f2f3fc] dark:hover:bg-slate-800/40'
-        }`}
+          }`}
       >
         <td className="px-3 py-3 text-center font-bold text-[#414752] dark:text-slate-300 select-none">
           <div className="flex items-center justify-center gap-1 cursor-grab active:cursor-grabbing" title="Cầm kéo để sắp xếp thứ tự nhiệm vụ">
@@ -832,7 +819,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             <span>{row.stt}</span>
           </div>
         </td>
-        
+
         <td className="px-4 py-3">
           <div className="flex flex-col gap-1">
             {isPinned && (
@@ -847,15 +834,13 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               <button
                 type="button"
                 onClick={() => togglePinTable2(row.id)}
-                className={`p-1 rounded transition-colors cursor-pointer shrink-0 ${
-                  isPinned ? 'hover:bg-amber-500/20 text-amber-500' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-500/10'
-                }`}
+                className={`p-1 rounded transition-colors cursor-pointer shrink-0 ${isPinned ? 'hover:bg-amber-500/20 text-amber-500' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-500/10'
+                  }`}
                 title={isPinned ? "Bỏ ghim trục trọng tâm" : "Ghim trục trọng tâm (Mặc định ở phía trên)"}
               >
                 <Pin
-                  className={`w-4 h-4 transition-transform hover:scale-125 ${
-                    isPinned ? 'fill-amber-500 text-amber-500 -rotate-45' : ''
-                  }`}
+                  className={`w-4 h-4 transition-transform hover:scale-125 ${isPinned ? 'fill-amber-500 text-amber-500 -rotate-45' : ''
+                    }`}
                 />
               </button>
 
@@ -866,9 +851,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 title={isStarred ? "Bỏ gắn sao nhiệm vụ lặp lại" : "Đánh sao nhiệm vụ lặp lại / thường xuyên"}
               >
                 <Star
-                  className={`w-4 h-4 transition-transform hover:scale-125 ${
-                    isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
-                  }`}
+                  className={`w-4 h-4 transition-transform hover:scale-125 ${isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
+                    }`}
                 />
               </button>
 
@@ -923,26 +907,24 @@ export const TableEditor: React.FC<TableEditorProps> = ({
     const badgeClass = row.tien_do === 'Hoàn thành'
       ? 'bg-emerald-600 text-white dark:bg-emerald-600'
       : row.tien_do === 'Đang thực hiện'
-      ? 'bg-[#005dac] text-white dark:bg-blue-600'
-      : row.tien_do === 'Hoàn thành trễ'
-      ? 'bg-amber-600 text-white dark:bg-amber-600'
-      : row.tien_do === 'Chưa thực hiện'
-      ? 'bg-slate-500 text-white dark:bg-slate-600'
-      : 'bg-indigo-600 text-white dark:bg-indigo-600 shadow-xs';
+        ? 'bg-[#005dac] text-white dark:bg-blue-600'
+        : row.tien_do === 'Hoàn thành trễ'
+          ? 'bg-amber-600 text-white dark:bg-amber-600'
+          : row.tien_do === 'Chưa thực hiện'
+            ? 'bg-slate-500 text-white dark:bg-slate-600'
+            : 'bg-indigo-600 text-white dark:bg-indigo-600 shadow-xs';
 
     return (
       <div
         key={`mobile_card_${row.id}`}
         id={`mobile_card_${row.id}`}
-        className={`bg-white dark:bg-slate-900 rounded-xl p-3.5 border transition-all space-y-2.5 shadow-xs ${
-          isPinned ? 'border-l-4 border-l-rose-500 bg-rose-50/20 dark:bg-rose-950/10' : ''
-        } ${
-          highlightedRowId === row.id
+        className={`bg-white dark:bg-slate-900 rounded-xl p-3.5 border transition-all space-y-2.5 shadow-xs ${isPinned ? 'border-l-4 border-l-rose-500 bg-rose-50/20 dark:bg-rose-950/10' : ''
+          } ${highlightedRowId === row.id
             ? 'border-amber-500 ring-2 ring-amber-400 bg-amber-50/50 dark:bg-amber-950/40'
             : row.thoi_gian === 'Chưa nhập'
-            ? 'border-red-300 dark:border-red-900/60 bg-red-50/40 dark:bg-red-950/20'
-            : 'border-slate-200 dark:border-slate-800'
-        }`}
+              ? 'border-red-300 dark:border-red-900/60 bg-red-50/40 dark:bg-red-950/20'
+              : 'border-slate-200 dark:border-slate-800'
+          }`}
       >
         {/* Card Header: STT, Badges, Star, Actions */}
         <div className="flex items-center justify-between gap-2">
@@ -986,15 +968,13 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             <button
               type="button"
               onClick={() => togglePinTable1(row.id)}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                isPinned ? 'hover:bg-rose-500/20 text-rose-500 bg-rose-50 dark:bg-rose-950/30' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800'
-              }`}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isPinned ? 'hover:bg-rose-500/20 text-rose-500 bg-rose-50 dark:bg-rose-950/30' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800'
+                }`}
               title={isPinned ? "Bỏ ghim trục trọng tâm" : "Ghim trục trọng tâm lên đầu"}
             >
               <Pin
-                className={`w-4 h-4 ${
-                  isPinned ? 'fill-rose-500 text-rose-500 -rotate-45' : ''
-                }`}
+                className={`w-4 h-4 ${isPinned ? 'fill-rose-500 text-rose-500 -rotate-45' : ''
+                  }`}
               />
             </button>
 
@@ -1005,9 +985,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               title={isStarred ? "Bỏ gắn sao" : "Gắn sao nhiệm vụ mẫu"}
             >
               <Star
-                className={`w-4 h-4 ${
-                  isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
-                }`}
+                className={`w-4 h-4 ${isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
+                  }`}
               />
             </button>
 
@@ -1059,9 +1038,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             readOnly={row.is_directive_task}
             value={row.noi_dung}
             onChange={e => updateTable1Field(row.id, 'noi_dung', e.target.value)}
-            className={`w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-sm font-semibold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#005dac] focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all ${
-              row.is_directive_task ? 'font-semibold text-purple-900 dark:text-purple-200 cursor-not-allowed bg-purple-50/40 dark:bg-purple-950/20' : ''
-            }`}
+            className={`w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-sm font-semibold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-[#005dac] focus:bg-white dark:focus:bg-slate-900 focus:outline-none transition-all ${row.is_directive_task ? 'font-semibold text-purple-900 dark:text-purple-200 cursor-not-allowed bg-purple-50/40 dark:bg-purple-950/20' : ''
+              }`}
             placeholder="Nhập nội dung nhiệm vụ..."
           />
         </div>
@@ -1091,11 +1069,10 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               readOnly={row.is_directive_task}
               value={row.thoi_gian}
               onChange={e => updateTable1Field(row.id, 'thoi_gian', e.target.value)}
-              className={`w-full bg-slate-50 dark:bg-slate-800/80 border rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#005dac] ${
-                row.thoi_gian === 'Chưa nhập'
+              className={`w-full bg-slate-50 dark:bg-slate-800/80 border rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#005dac] ${row.thoi_gian === 'Chưa nhập'
                   ? 'border-red-400 text-red-600 dark:text-red-400 bg-red-50/50'
                   : 'border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
-              }`}
+                }`}
               placeholder="VD: 20/10/2026 hoặc Trong tuần"
             />
           </div>
@@ -1227,9 +1204,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
       <div
         key={`mobile_card2_${row.id}`}
         id={`mobile_card2_${row.id}`}
-        className={`bg-white dark:bg-slate-900 rounded-xl p-3.5 border transition-all space-y-2.5 shadow-xs ${
-          isPinned ? 'border-l-4 border-l-amber-500 bg-amber-50/20 dark:bg-amber-950/10' : ''
-        } border-amber-200/80 dark:border-amber-900/40`}
+        className={`bg-white dark:bg-slate-900 rounded-xl p-3.5 border transition-all space-y-2.5 shadow-xs ${isPinned ? 'border-l-4 border-l-amber-500 bg-amber-50/20 dark:bg-amber-950/10' : ''
+          } border-amber-200/80 dark:border-amber-900/40`}
       >
         {/* Card Header: STT, Tag, Pin, Star, Delete */}
         <div className="flex items-center justify-between gap-2">
@@ -1267,15 +1243,13 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             <button
               type="button"
               onClick={() => togglePinTable2(row.id)}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                isPinned ? 'hover:bg-amber-500/20 text-amber-500 bg-amber-50 dark:bg-amber-950/30' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-slate-800'
-              }`}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isPinned ? 'hover:bg-amber-500/20 text-amber-500 bg-amber-50 dark:bg-amber-950/30' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-slate-800'
+                }`}
               title={isPinned ? "Bỏ ghim trục trọng tâm" : "Ghim trục trọng tâm lên đầu"}
             >
               <Pin
-                className={`w-4 h-4 ${
-                  isPinned ? 'fill-amber-500 text-amber-500 -rotate-45' : ''
-                }`}
+                className={`w-4 h-4 ${isPinned ? 'fill-amber-500 text-amber-500 -rotate-45' : ''
+                  }`}
               />
             </button>
 
@@ -1286,9 +1260,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
               title={isStarred ? "Bỏ gắn sao" : "Gắn sao nhiệm vụ mẫu"}
             >
               <Star
-                className={`w-4 h-4 ${
-                  isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
-                }`}
+                className={`w-4 h-4 ${isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-400 hover:text-amber-400'
+                  }`}
               />
             </button>
 
@@ -1394,7 +1367,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
 
   return (
     <section className="col-span-12 lg:col-span-9 h-full min-h-0 overflow-y-auto p-3 sm:p-4 md:p-6 bg-[#f9f9ff] dark:bg-slate-900 space-y-4 sm:space-y-6 scroll-smooth pb-28 lg:pb-36 transition-colors duration-300">
-      
+
       {/* Banner thông báo chế độ Form */}
       {isConsolidated ? (
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 p-3.5 sm:p-4 rounded-xl border border-blue-500/30 text-white flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
@@ -1405,11 +1378,10 @@ export const TableEditor: React.FC<TableEditorProps> = ({
             <div>
               <div className="font-bold text-sm flex items-center gap-2 flex-wrap">
                 <span>FORM TỔNG HỢP VĂN PHÒNG (NGHỊ ĐỊNH 30)</span>
-                <span className={`text-[10px] uppercase px-2 py-0.5 rounded font-extrabold border ${
-                  activeTeamCode === 'VAN_THU' ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/30' :
-                  activeTeamCode === 'CDS' ? 'bg-blue-500/30 text-blue-200 border-blue-400/30' :
-                  'bg-amber-500/30 text-amber-200 border-amber-400/30'
-                }`}>
+                <span className={`text-[10px] uppercase px-2 py-0.5 rounded font-extrabold border ${activeTeamCode === 'VAN_THU' ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/30' :
+                    activeTeamCode === 'CDS' ? 'bg-blue-500/30 text-blue-200 border-blue-400/30' :
+                      'bg-amber-500/30 text-amber-200 border-amber-400/30'
+                  }`}>
                   {activeTeamCode === 'VAN_THU' ? '📁 Form Tổ Văn thư' : activeTeamCode === 'CDS' ? '📁 Form Tổ Chuyển đổi số' : '🏛️ Master Tổng hợp 2 Tổ'}
                 </span>
               </div>
@@ -2351,9 +2323,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                             updated[idx] = { ...updated[idx], error_count: val };
                             setDocInspectionStats(updated);
                           }}
-                          className={`w-20 bg-white dark:bg-slate-800 border rounded px-2 py-1 text-center font-bold focus:ring-2 ${
-                            item.error_count > 0 ? 'border-rose-400 text-rose-600 dark:text-rose-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}
+                          className={`w-20 bg-white dark:bg-slate-800 border rounded px-2 py-1 text-center font-bold focus:ring-2 ${item.error_count > 0 ? 'border-rose-400 text-rose-600 dark:text-rose-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
                         />
                       </td>
                       <td className="px-4 py-2.5 text-center">
@@ -2420,9 +2391,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                           updated[idx] = { ...updated[idx], error_count: val };
                           setDocInspectionStats(updated);
                         }}
-                        className={`w-full bg-white dark:bg-slate-800 border rounded-lg py-1 px-1.5 text-center font-bold text-xs ${
-                          item.error_count > 0 ? 'border-rose-400 text-rose-600 dark:text-rose-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
+                        className={`w-full bg-white dark:bg-slate-800 border rounded-lg py-1 px-1.5 text-center font-bold text-xs ${item.error_count > 0 ? 'border-rose-400 text-rose-600 dark:text-rose-400' : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                          }`}
                       />
                     </div>
                     <div>
@@ -2580,19 +2550,47 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                     </div>
                   </div>
 
-                  {/* Vị trí 3: Phó Chánh Văn phòng */}
-                  <div className="bg-slate-50/90 dark:bg-slate-800/80 rounded-xl p-3 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs space-y-2 flex flex-col justify-between hover:border-purple-300 dark:hover:border-purple-600 transition-all">
+                  {/* Vị trí 3: Phó Chánh Văn phòng (Tùy chọn Bật / Tắt đưa vào báo cáo) */}
+                  <div className={`rounded-xl p-3 border shadow-2xs space-y-2 flex flex-col justify-between transition-all ${consolidatedMeta?.show_pho_chanh_vp === false
+                      ? 'bg-slate-100/60 dark:bg-slate-900/40 border-dashed border-slate-300 dark:border-slate-700/70 opacity-75'
+                      : 'bg-slate-50/90 dark:bg-slate-800/80 border-slate-200/90 dark:border-slate-700/80 hover:border-purple-300 dark:hover:border-purple-600'
+                    }`}>
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
                         <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
                           <span className="w-4 h-4 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[10px] font-extrabold flex items-center justify-center shrink-0">3</span>
                           Ý kiến Phó Chánh VP
                         </span>
-                        <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                          Lãnh đạo VP
-                        </span>
+                        <label
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all select-none ${isReadOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                            } ${consolidatedMeta?.show_pho_chanh_vp === false
+                              ? 'bg-slate-200/80 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300/70 dark:hover:bg-slate-700'
+                              : 'bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/80'
+                            }`}
+                          title="Chọn để đưa mục Ý kiến Phó Chánh VP vào báo cáo & file Word hoặc ẩn đi"
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={isReadOnly}
+                            checked={consolidatedMeta?.show_pho_chanh_vp !== false}
+                            onChange={(e) => {
+                              if (setConsolidatedMeta) {
+                                setConsolidatedMeta(prev => ({
+                                  ...prev,
+                                  show_pho_chanh_vp: e.target.checked
+                                }));
+                              }
+                            }}
+                            className="w-3 h-3 rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer accent-purple-600"
+                          />
+                          <span>{consolidatedMeta?.show_pho_chanh_vp === false ? 'Đã ẩn' : 'Có trong BC'}</span>
+                        </label>
                       </div>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-1.5 leading-tight">Kiểm tra và trình duyệt cấp trên</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-1.5 leading-tight">
+                        {consolidatedMeta?.show_pho_chanh_vp === false
+                          ? 'Không hiển thị mục này trên bản in & file Word'
+                          : 'Kiểm tra và trình duyệt cấp trên'}
+                      </p>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
@@ -2600,7 +2598,7 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                       </div>
                       <input
                         type="text"
-                        disabled={isReadOnly}
+                        disabled={isReadOnly || consolidatedMeta?.show_pho_chanh_vp === false}
                         value={consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng'}
                         placeholder="Họ và tên Phó Chánh VP..."
                         onChange={(e) => {
@@ -2608,7 +2606,8 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                             setConsolidatedMeta(prev => ({ ...prev, pho_chanh_van_phong_name: e.target.value }));
                           }
                         }}
-                        className="w-full pl-8 pr-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                        className={`w-full pl-8 pr-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all ${consolidatedMeta?.show_pho_chanh_vp === false ? 'line-through text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-900/50 cursor-not-allowed' : ''
+                          }`}
                       />
                     </div>
                   </div>
@@ -2651,7 +2650,9 @@ export const TableEditor: React.FC<TableEditorProps> = ({
                 <div className="mt-3 p-3 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-xl border border-indigo-200/60 dark:border-indigo-900/50 flex items-center gap-2 text-xs text-indigo-900 dark:text-indigo-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>
-                    Họ tên 4 vị trí trên sẽ xuất hiện tại phần khối chữ ký trang cuối của Báo cáo Tuần Tổng hợp theo đúng quy cách Nghị định 30/2020/NĐ-CP.
+                    {consolidatedMeta?.show_pho_chanh_vp === false
+                      ? 'Đã ẩn mục "Ý kiến của Phó Chánh Văn phòng". Báo cáo & File Word xuất ra sẽ gồm 3 vị trí chữ ký (Tổ trưởng, Người lập, Chánh Văn phòng).'
+                      : 'Họ tên 4 vị trí trên sẽ xuất hiện tại phần khối chữ ký trang cuối của Báo cáo Tuần Tổng hợp theo đúng quy cách Nghị định 30/2020/NĐ-CP.'}
                   </span>
                 </div>
               </div>

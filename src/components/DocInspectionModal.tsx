@@ -15,6 +15,7 @@ export interface ConsolidatedReportMetaItem {
   pho_chanh_van_phong_name: string;
   chanh_van_phong_name: string;
   ending_note: string;
+  show_pho_chanh_vp?: boolean;
 }
 
 interface DocInspectionModalProps {
@@ -38,7 +39,8 @@ export function DocInspectionModal({
     nguoi_lap_name: '',
     pho_chanh_van_phong_name: 'Nguyễn Đức Thắng',
     chanh_van_phong_name: 'Hoàng Văn Dương',
-    ending_note: 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.'
+    ending_note: 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.',
+    show_pho_chanh_vp: true
   });
 
   useEffect(() => {
@@ -195,12 +197,24 @@ export function DocInspectionModal({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] text-slate-400 font-bold">3. Ý kiến của Phó Chánh Văn phòng (Tên):</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] text-slate-400 font-bold">3. Ý kiến của Phó Chánh Văn phòng (Tên):</label>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-[11px] font-bold text-purple-300">
+                    <input
+                      type="checkbox"
+                      checked={localMeta.show_pho_chanh_vp !== false}
+                      onChange={(e) => setLocalMeta({ ...localMeta, show_pho_chanh_vp: e.target.checked })}
+                      className="rounded border-slate-700 bg-slate-900 text-purple-500 focus:ring-purple-500 cursor-pointer"
+                    />
+                    <span>Đưa vào báo cáo</span>
+                  </label>
+                </div>
                 <input
                   type="text"
+                  disabled={localMeta.show_pho_chanh_vp === false}
                   value={localMeta.pho_chanh_van_phong_name}
                   onChange={(e) => setLocalMeta({ ...localMeta, pho_chanh_van_phong_name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
+                  className={`w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white focus:border-emerald-500 focus:outline-none ${localMeta.show_pho_chanh_vp === false ? 'opacity-50 line-through' : ''}`}
                 />
               </div>
 

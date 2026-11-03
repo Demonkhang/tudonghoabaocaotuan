@@ -1,5 +1,6 @@
 import { db } from '../db.js';
 import { createDocxReport, createConsolidatedOfficeDocx } from '../services/docxService.js';
+import { createMonthlyOfficeDocx, getDefaultMonthlyReportPayload, getSampleSeptember2026Payload } from '../services/monthlyDocxService.js';
 import { uploadBufferToCloudinary } from '../services/cloudinaryService.js';
 
 /**
@@ -1362,8 +1363,8 @@ export async function getConsolidatedReportDetail(req, res) {
     let meta = await db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
     if (!meta) {
       await db.prepare(`
-        INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note)
-        VALUES (?, ?, 'Trần Thuận Hòa', ?, 'Nguyễn Đức Thắng', 'Hoàng Văn Dương', ?)
+        INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note, show_pho_chanh_vp)
+        VALUES (?, ?, 'Trần Thuận Hòa', ?, 'Nguyễn Đức Thắng', 'Hoàng Văn Dương', ?, 1)
       `).run(
         `meta_${activeReportId}`,
         activeReportId,
@@ -1376,6 +1377,9 @@ export async function getConsolidatedReportDetail(req, res) {
         meta.nguoi_lap_name = defaultNguoiLap;
         await db.prepare('UPDATE consolidated_report_meta SET nguoi_lap_name = ? WHERE id = ?').run(defaultNguoiLap, meta.id);
       }
+    }
+    if (meta) {
+      meta.show_pho_chanh_vp = meta.show_pho_chanh_vp !== 0 && meta.show_pho_chanh_vp !== false;
     }
 
     // 4. Lấy toàn bộ Tasks
@@ -1483,10 +1487,11 @@ export async function saveConsolidatedReport(req, res) {
 
       // 2. Upsert consolidated meta
       if (consolidated_meta) {
+        const showPhoChanhVpVal = (consolidated_meta.show_pho_chanh_vp === false || consolidated_meta.show_pho_chanh_vp === 0) ? 0 : 1;
         await db.prepare('DELETE FROM consolidated_report_meta WHERE report_id = ?').run(targetReportId);
         await db.prepare(`
-          INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO consolidated_report_meta (id, report_id, to_truong_name, nguoi_lap_name, pho_chanh_van_phong_name, chanh_van_phong_name, ending_note, show_pho_chanh_vp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           `meta_${targetReportId}`,
           targetReportId,
@@ -1494,7 +1499,8 @@ export async function saveConsolidatedReport(req, res) {
           consolidated_meta.nguoi_lap_name || metadata?.nguoi_lap || '',
           consolidated_meta.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng',
           consolidated_meta.chanh_van_phong_name || 'Hoàng Văn Dương',
-          consolidated_meta.ending_note || ''
+          consolidated_meta.ending_note || '',
+          showPhoChanhVpVal
         );
       }
 
@@ -1979,5 +1985,330 @@ export async function finalizeReport(req, res) {
     return res.status(500).json({ success: false, error: error.message });
   }
 }
+
+/* ==========================================================================
+   CHỨC NĂNG BÁO CÁO THÁNG (MONTHLY OFFICE REPORT - ĐỘC LẬP 100%)
+   ========================================================================== */
+
+/**
+ * Tính danh sách các tuần ISO nằm trong Tháng M / Năm YYYY
+ */
+function getWeeksInMonth(month, year) {
+  const m = Number(month) || 9;
+  const y = Number(year) || 2026;
+  const weeks = new Set();
+
+  for (let w = 1; w <= 53; w++) {
+    const simple = new Date(y, 0, 1 + (w - 1) * 7);
+    const dayOfWeek = simple.getDay();
+    const ISOweekStart = new Date(simple);
+    const diff = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
+    ISOweekStart.setDate(simple.getDate() + diff);
+
+    const thursday = new Date(ISOweekStart);
+    thursday.setDate(ISOweekStart.getDate() + 3);
+
+    if (thursday.getFullYear() === y && (thursday.getMonth() + 1) === m) {
+      weeks.add(w);
+    }
+  }
+  return Array.from(weeks).sort((a, b) => a - b);
+}
+
+/**
+ * Lấy chi tiết Báo cáo Tháng (Nếu chưa có trong DB thì trả về khung mặc định)
+ */
+export async function getMonthlyReportDetail(req, res) {
+  try {
+    const month = parseInt(req.query.month || '9', 10);
+    const year = parseInt(req.query.year || '2026', 10);
+    const accountId = req.query.account_id || 'acc_vp_hoa';
+    const userFullName = req.query.full_name || 'Trần Hoàng Phương Nhi';
+
+    // 1. Tìm báo cáo tháng theo account_id hoặc dùng chung trong Văn phòng
+    let row = await db.prepare(`
+      SELECT * FROM monthly_reports
+      WHERE month = ? AND year = ? AND account_id = ?
+      LIMIT 1
+    `).get(month, year, accountId);
+
+    if (!row) {
+      row = await db.prepare(`
+        SELECT * FROM monthly_reports
+        WHERE month = ? AND year = ?
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `).get(month, year);
+    }
+
+    if (row && row.payload_json) {
+      const parsed = JSON.parse(row.payload_json);
+      return res.json({
+        success: true,
+        is_saved: true,
+        report_id: row.id,
+        updated_at: row.updated_at,
+        data: parsed
+      });
+    }
+
+    // 2. Nếu chưa lưu trong DB, trả về dữ liệu khởi tạo mặc định
+    const defaultPayload = getDefaultMonthlyReportPayload(month, year, userFullName);
+    return res.json({
+      success: true,
+      is_saved: false,
+      report_id: `monthly_vp_m${month}_${year}`,
+      data: defaultPayload
+    });
+  } catch (error) {
+    console.error('Lỗi getMonthlyReportDetail:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Lưu / Cập nhật Báo cáo Tháng vào bảng monthly_reports
+ */
+export async function saveMonthlyReport(req, res) {
+  try {
+    const { account_id, department_id, payload } = req.body;
+    if (!payload || !payload.metadata) {
+      return res.status(400).json({ success: false, error: 'Thiếu dữ liệu payload Báo cáo Tháng' });
+    }
+
+    const meta = payload.metadata;
+    const month = parseInt(meta.thang || '9', 10);
+    const year = parseInt(meta.nam || '2026', 10);
+    const accId = account_id || 'acc_vp_hoa';
+    const deptId = department_id || 'dept_vp';
+
+    const existing = await db.prepare(`
+      SELECT id FROM monthly_reports
+      WHERE month = ? AND year = ? AND account_id = ?
+    `).get(month, year, accId);
+
+    const reportId = existing ? existing.id : `monthly_${accId}_m${month}_${year}`;
+    const payloadStr = JSON.stringify(payload);
+
+    if (existing) {
+      await db.prepare(`
+        UPDATE monthly_reports
+        SET report_number = ?,
+            report_date = ?,
+            payload_json = ?,
+            pho_chanh_vp_name = ?,
+            nguoi_trinh_name = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(
+        meta.so_bao_cao || '',
+        meta.ngay_lap || '',
+        payloadStr,
+        meta.pho_chanh_vp_name || 'Nguyễn Đức Thắng',
+        meta.nguoi_trinh_name || '',
+        reportId
+      );
+    } else {
+      await db.prepare(`
+        INSERT INTO monthly_reports (
+          id, department_id, account_id, month, year,
+          report_number, report_date, status, payload_json,
+          pho_chanh_vp_name, nguoi_trinh_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+      `).run(
+        reportId,
+        deptId,
+        accId,
+        month,
+        year,
+        meta.so_bao_cao || '',
+        meta.ngay_lap || '',
+        payloadStr,
+        meta.pho_chanh_vp_name || 'Nguyễn Đức Thắng',
+        meta.nguoi_trinh_name || ''
+      );
+    }
+
+    return res.json({
+      success: true,
+      report_id: reportId,
+      message: `Đã lưu Báo cáo Tháng ${month}/${year} thành công!`
+    });
+  } catch (error) {
+    console.error('Lỗi saveMonthlyReport:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Tự động tổng hợp dữ liệu từ các Báo cáo Tuần thuộc Tháng M/YYYY
+ */
+export async function autoAggregateMonthlyReport(req, res) {
+  try {
+    const { month, year } = req.body;
+    const m = parseInt(month || '9', 10);
+    const y = parseInt(year || '2026', 10);
+
+    const weeks = getWeeksInMonth(m, y);
+    if (weeks.length === 0) {
+      return res.json({
+        success: true,
+        weeks: [],
+        message: 'Không tìm thấy tuần thuộc tháng này.'
+      });
+    }
+
+    const placeholders = weeks.map(() => '?').join(',');
+    const weeklyReports = await db.prepare(`
+      SELECT id, week_number, report_type, kho_khan
+      FROM reports
+      WHERE year = ? AND week_number IN (${placeholders})
+      ORDER BY week_number ASC
+    `).all(y, ...weeks);
+
+    const reportIds = weeklyReports.map(r => r.id);
+
+    // 1. Cộng dồn bảng kiểm tra thể thức công văn từ doc_inspection_stats
+    const defaultDepts = [
+      'Văn phòng',
+      'Phòng Kế hoạch Tài chính',
+      'Phòng Quản lý Dự án',
+      'Phòng Giám sát Khu liên hợp',
+      'Phòng Giám sát Khối lượng',
+      'Phòng Kiểm tra Môi trường'
+    ];
+    const statMap = new Map();
+    defaultDepts.forEach((d, idx) => {
+      statMap.set(d.toLowerCase(), {
+        stt: idx + 1,
+        department_name: d,
+        total_checked: 0,
+        error_count: 0
+      });
+    });
+
+    if (reportIds.length > 0) {
+      const rptPlaceholders = reportIds.map(() => '?').join(',');
+      const statsRows = await db.prepare(`
+        SELECT department_name, total_checked, error_count
+        FROM doc_inspection_stats
+        WHERE report_id IN (${rptPlaceholders})
+      `).all(...reportIds);
+
+      for (const s of statsRows) {
+        const key = String(s.department_name || '').trim().toLowerCase();
+        if (statMap.has(key)) {
+          const item = statMap.get(key);
+          item.total_checked += Number(s.total_checked || 0);
+          item.error_count += Number(s.error_count || 0);
+        }
+      }
+    }
+
+    // 2. Gom nhiệm vụ từ bảng tasks trong các tuần của tháng
+    const nhiemVuCdsSet = new Set();
+    const congTacKhacSet = new Set();
+    const trongTamThangToiSet = new Set();
+    const khoKhanSet = new Set();
+
+    for (const r of weeklyReports) {
+      const kk = String(r.kho_khan || '').trim();
+      if (kk && kk.toLowerCase() !== 'không' && kk.toLowerCase() !== 'không.') {
+        khoKhanSet.add(kk);
+      }
+    }
+
+    if (reportIds.length > 0) {
+      const rptPlaceholders = reportIds.map(() => '?').join(',');
+      const taskRows = await db.prepare(`
+        SELECT table_type, noi_dung, trien_khai, san_pham, tien_do, team_code
+        FROM tasks
+        WHERE report_id IN (${rptPlaceholders})
+        ORDER BY order_index ASC
+      `).all(...reportIds);
+
+      for (const t of taskRows) {
+        const noiDung = String(t.noi_dung || '').trim().replace(/^[-•+]\s*/, '');
+        if (!noiDung) continue;
+
+        const detail = String(t.san_pham || t.trien_khai || '').trim();
+        const combinedLine = (detail && !noiDung.toLowerCase().includes(detail.toLowerCase()) && detail.toLowerCase() !== 'đã hoàn thành' && detail.toLowerCase() !== 'hoàn thành')
+          ? `${noiDung.replace(/[.;,]+$/, '')}, ${detail.replace(/[.;,]+$/, '')};`
+          : `${noiDung.replace(/[.;,]+$/, '')};`;
+
+        if (Number(t.table_type) === 1) {
+          if (t.team_code === 'CDS' || noiDung.toLowerCase().includes('chuyển đổi số') || noiDung.toLowerCase().includes('chữ ký số') || noiDung.toLowerCase().includes('cơ sở dữ liệu') || noiDung.toLowerCase().includes('hạ tầng') || noiDung.toLowerCase().includes('phần mềm')) {
+            nhiemVuCdsSet.add(combinedLine);
+          } else {
+            congTacKhacSet.add(combinedLine);
+          }
+
+          // Nếu nhiệm vụ đang thực hiện dở dang thì gợi ý sang trọng tâm tháng tới
+          if (String(t.tien_do || '').toLowerCase().includes('đang thực hiện')) {
+            trongTamThangToiSet.add(`${noiDung.replace(/[.;,]+$/, '')};`);
+          }
+        } else if (Number(t.table_type) === 2) {
+          trongTamThangToiSet.add(`${noiDung.replace(/[.;,]+$/, '')};`);
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      weeks,
+      reports_found: weeklyReports.length,
+      aggregated: {
+        bang_kiem_tra_loi: Array.from(statMap.values()),
+        nhiem_vu_cds: Array.from(nhiemVuCdsSet),
+        cong_tac_khac: Array.from(congTacKhacSet),
+        kho_khan_ton_dong: Array.from(khoKhanSet),
+        trong_tam_thang_toi: Array.from(trongTamThangToiSet)
+      },
+      message: weeklyReports.length > 0
+        ? `Đã tổng hợp dữ liệu từ ${weeklyReports.length} báo cáo tuần (Tuần ${weeks.join(', ')}) của Tháng ${m}/${y}!`
+        : `Chưa có báo cáo tuần nào được lưu trong CSDL cho Tháng ${m}/${y} (Tuần ${weeks.join(', ')}).`
+    });
+  } catch (error) {
+    console.error('Lỗi autoAggregateMonthlyReport:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Xuất file Word (.docx) Báo cáo Tháng
+ */
+export async function generateMonthlyWord(req, res) {
+  try {
+    const payload = req.body;
+    const docBuffer = createMonthlyOfficeDocx(payload);
+    const thang = payload?.metadata?.thang || 9;
+    const nam = payload?.metadata?.nam || 2026;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename=BAO_CAO_THANG_${thang}_${nam}_VP.docx`);
+    return res.send(docBuffer);
+  } catch (error) {
+    console.error('Lỗi generateMonthlyWord:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Lấy danh sách lịch sử các Báo cáo Tháng đã lưu
+ */
+export async function getMonthlyReportHistory(req, res) {
+  try {
+    const rows = await db.prepare(`
+      SELECT id, account_id, month, year, report_number, report_date, status, pho_chanh_vp_name, nguoi_trinh_name, updated_at
+      FROM monthly_reports
+      ORDER BY year DESC, month DESC, updated_at DESC
+    `).all();
+    return res.json({ success: true, reports: rows });
+  } catch (error) {
+    console.error('Lỗi getMonthlyReportHistory:', error);
+    return res.status(500).json({ success: false, reports: [], error: error.message });
+  }
+}
+
 
 

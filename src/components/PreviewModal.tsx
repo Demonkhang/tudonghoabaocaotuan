@@ -888,14 +888,16 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                       </td>
                     </tr>
 
-                    {/* HÀNG 2: PHÓ CHÁNH VĂN PHÒNG */}
-                    <tr style={{ border: 'none' }}>
-                      <td colSpan={2} className="p-4 text-center align-top border-none" style={{ width: '100%', border: 'none', minHeight: '140px' }}>
-                        <div className="font-bold uppercase text-[12pt] mb-3">Ý kiến của Phó Chánh Văn phòng</div>
-                        {renderSignatureStamp(consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng') || <div className="h-20 my-2" />}
-                        <div className="font-bold text-[12pt] mt-3">{consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng'}</div>
-                      </td>
-                    </tr>
+                    {/* HÀNG 2: PHÓ CHÁNH VĂN PHÒNG (Hiển thị tùy chọn) */}
+                    {consolidatedMeta?.show_pho_chanh_vp !== false && (
+                      <tr style={{ border: 'none' }}>
+                        <td colSpan={2} className="p-4 text-center align-top border-none" style={{ width: '100%', border: 'none', minHeight: '140px' }}>
+                          <div className="font-bold uppercase text-[12pt] mb-3">Ý kiến của Phó Chánh Văn phòng</div>
+                          {renderSignatureStamp(consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng') || <div className="h-20 my-2" />}
+                          <div className="font-bold text-[12pt] mt-3">{consolidatedMeta?.pho_chanh_van_phong_name || 'Nguyễn Đức Thắng'}</div>
+                        </td>
+                      </tr>
+                    )}
 
                     {/* HÀNG 3: CHÁNH VĂN PHÒNG */}
                     <tr style={{ border: 'none' }}>

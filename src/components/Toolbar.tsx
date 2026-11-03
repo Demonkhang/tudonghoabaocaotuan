@@ -69,6 +69,7 @@ interface ToolbarProps {
   onOpenApprovalChain?: () => void;
   onOpenDigitalSignature?: () => void;
   onOpenSignatureSetup?: () => void;
+  onOpenMonthlyReport?: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -106,7 +107,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onOpenDocInspectionModal,
   onOpenApprovalChain,
   onOpenDigitalSignature,
-  onOpenSignatureSetup
+  onOpenSignatureSetup,
+  onOpenMonthlyReport
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -315,6 +317,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
           {/* Form Switcher & Team Switcher */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {onOpenMonthlyReport && (
+              <button
+                onClick={onOpenMonthlyReport}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-extrabold border border-amber-500/70 bg-gradient-to-r from-amber-950/90 via-amber-900/70 to-amber-950/90 hover:from-amber-900 hover:to-amber-800 text-amber-200 transition-all cursor-pointer shadow-xs"
+                title="Mở chức năng Tạo Báo Cáo Tháng (Mẫu Văn Phòng 1365/VP - Độc lập 100%)"
+              >
+                <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                <span>📅 Báo Cáo Tháng</span>
+              </button>
+            )}
+
             {onOpenReportChoice && (
               <button
                 onClick={onOpenReportChoice}
@@ -490,6 +503,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                   <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 mb-1">
                     Định Dạng Báo Cáo &amp; Xuất File
                   </div>
+
+                  {onOpenMonthlyReport && (
+                    <button
+                      onClick={() => { setIsExportMenuOpen(false); onOpenMonthlyReport(); }}
+                      className="w-full px-3 py-2 text-left hover:bg-amber-950/60 flex items-center gap-2 font-extrabold text-amber-300 border-b border-slate-800/80 cursor-pointer"
+                    >
+                      <Calendar className="w-4 h-4 text-amber-400" />
+                      <span>📅 Tạo &amp; Xuất Báo Cáo Tháng</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => { setIsExportMenuOpen(false); onOpenPreview(); }}

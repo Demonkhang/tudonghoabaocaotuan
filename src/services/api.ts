@@ -128,6 +128,87 @@ export async function exportConsolidatedWordReport(payload: any) {
   }
 }
 
+/* ==========================================================================
+   API BÁO CÁO THÁNG (MONTHLY OFFICE REPORT - ĐỘC LẬP 100%)
+   ========================================================================== */
+
+export async function fetchMonthlyReportDetail(month: number, year: number, accountId?: string, fullName?: string) {
+  try {
+    let url = `/api/reports/monthly/detail?month=${month}&year=${year}`;
+    if (accountId) url += `&account_id=${encodeURIComponent(accountId)}`;
+    if (fullName) url += `&full_name=${encodeURIComponent(fullName)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Không thể tải dữ liệu Báo cáo Tháng');
+    return await res.json();
+  } catch (err: any) {
+    console.warn('Lỗi fetchMonthlyReportDetail:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function saveMonthlyReportData(payload: any, accountId?: string, departmentId?: string) {
+  try {
+    const res = await fetch('/api/reports/monthly/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        payload,
+        account_id: accountId,
+        department_id: departmentId
+      })
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) throw new Error(result.error || 'Lỗi lưu Báo cáo Tháng');
+    return result;
+  } catch (err: any) {
+    console.error('Lỗi saveMonthlyReportData:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function autoAggregateMonthlyReportApi(month: number, year: number) {
+  try {
+    const res = await fetch('/api/reports/monthly/auto-aggregate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, year })
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error('Lỗi autoAggregateMonthlyReportApi:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function exportMonthlyWordReport(payload: any) {
+  try {
+    const res = await fetch('/api/generate-word-monthly', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Lỗi xuất file Word Báo cáo Tháng');
+    const blob = await res.blob();
+    const thang = payload?.metadata?.thang || 9;
+    const nam = payload?.metadata?.nam || 2026;
+    downloadBlob(blob, `BAO_CAO_THANG_${thang}_${nam}_VP.docx`);
+    return { success: true };
+  } catch (err: any) {
+    alert('Lỗi xuất file Word Báo cáo Tháng: ' + err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchMonthlyReportHistory() {
+  try {
+    const res = await fetch('/api/reports/monthly/history');
+    if (!res.ok) throw new Error('Không thể tải lịch sử Báo cáo Tháng');
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, reports: [] };
+  }
+}
+
 export async function shareReportApi(reportId: string, sharedWithAccountId: string, permission: 'VIEW' | 'EDIT', senderAccountId: string) {
   try {
     const res = await fetch('/api/reports/share', {

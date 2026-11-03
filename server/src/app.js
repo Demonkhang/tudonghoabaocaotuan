@@ -81,6 +81,13 @@ app.get('/api/reports/consolidated/detail', reportController.getConsolidatedRepo
 app.post('/api/reports/consolidated/save', reportController.saveConsolidatedReport);
 app.post('/api/generate-word-consolidated', reportController.generateConsolidatedWord);
 
+// API Endpoints - Monthly Office Reports (Báo Cáo Tháng - Độc lập 100%)
+app.get('/api/reports/monthly/detail', reportController.getMonthlyReportDetail);
+app.get('/api/reports/monthly/history', reportController.getMonthlyReportHistory);
+app.post('/api/reports/monthly/save', reportController.saveMonthlyReport);
+app.post('/api/reports/monthly/auto-aggregate', reportController.autoAggregateMonthlyReport);
+app.post('/api/generate-word-monthly', reportController.generateMonthlyWord);
+
 // API Endpoints - Report Sharing & Permissions
 app.post('/api/reports/share', reportController.shareReport);
 app.get('/api/reports/shares', reportController.getReportShares);
