@@ -4,6 +4,40 @@ import { createMonthlyOfficeDocx, getDefaultMonthlyReportPayload, getSampleSepte
 import { uploadBufferToCloudinary } from '../services/cloudinaryService.js';
 
 /**
+ * Chuẩn hóa chuỗi ngày lập (Date / ISO / DD/MM/YYYY / YYYY-MM-DD) sang định dạng chuẩn YYYY-MM-DD
+ * Giúp đồng bộ tuyệt đối giữa SQLite (Local) và Neon PostgreSQL (Vercel Serverless)
+ */
+function normalizeNgayLap(rawDate) {
+  if (!rawDate) return null;
+  if (rawDate instanceof Date) {
+    if (isNaN(rawDate.getTime())) return null;
+    const y = rawDate.getFullYear();
+    const m = String(rawDate.getMonth() + 1).padStart(2, '0');
+    const d = String(rawDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const str = String(rawDate).trim();
+  if (!str) return null;
+
+  const clean = str.split(' ')[0].split('T')[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+    return clean;
+  }
+  if (clean.includes('/')) {
+    const parts = clean.split('/');
+    if (parts.length === 3) {
+      const p0 = parts[0].padStart(2, '0');
+      const p1 = parts[1].padStart(2, '0');
+      const p2 = parts[2];
+      if (p2.length === 4) {
+        return `${p2}-${p1}-${p0}`;
+      }
+    }
+  }
+  return clean;
+}
+
+/**
  * 1. Đăng nhập tài khoản
  */
 export async function login(req, res) {
@@ -473,14 +507,25 @@ export async function getReportDetail(req, res) {
       const targetWeek = parseInt(week || '42', 10);
       const targetYear = parseInt(year || '2026', 10);
 
-      // 1. Tìm báo cáo theo account_id hiện tại
+      // 1. Tìm báo cáo theo account_id hiện tại (ưu tiên báo cáo SINGLE)
       report = await db.prepare(`
         SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
         FROM reports r
         JOIN accounts a ON r.account_id = a.id
         JOIN departments d ON r.department_id = d.id
-        WHERE r.account_id = ? AND r.week_number = ? AND r.year = ?
+        WHERE r.account_id = ? AND COALESCE(r.report_type, 'SINGLE') = 'SINGLE' AND r.week_number = ? AND r.year = ?
       `).get(currentUserId, targetWeek, targetYear);
+
+      if (!report) {
+        report = await db.prepare(`
+          SELECT r.*, a.full_name as nguoi_lap, d.name as don_vi
+          FROM reports r
+          JOIN accounts a ON r.account_id = a.id
+          JOIN departments d ON r.department_id = d.id
+          WHERE r.account_id = ? AND r.week_number = ? AND r.year = ?
+          ORDER BY r.updated_at DESC
+        `).get(currentUserId, targetWeek, targetYear);
+      }
 
       // 2. Nếu là ADMIN và có department_id, ADMIN mới được xem báo cáo phòng ban đó
       if (!report && isAdmin && department_id) {
@@ -503,6 +548,7 @@ export async function getReportDetail(req, res) {
           JOIN departments d ON r.department_id = d.id
           JOIN report_shares rs ON r.id = rs.report_id
           WHERE rs.shared_with_account_id = ? AND r.week_number = ? AND r.year = ?
+          ORDER BY r.updated_at DESC
         `).get(currentUserId, targetWeek, targetYear);
       }
     }
@@ -561,6 +607,8 @@ export async function getReportDetail(req, res) {
       isEdited: false
     }));
 
+    const resolvedNgayLap = normalizeNgayLap(report.ngay_lap) || normalizeNgayLap(report.created_at) || normalizeNgayLap(new Date());
+
     return res.json({
       success: true,
       data: {
@@ -574,9 +622,13 @@ export async function getReportDetail(req, res) {
           nguoi_lap: report.nguoi_lap,
           don_vi: report.don_vi,
           co_quan_cap_tren: "BAN QUẢN LÝ CÁC KHU LIÊN HỢP XỬ LÝ CHẤT THẢI THÀNH PHỐ",
-          ngay_lap: report.created_at,
+          ngay_lap: resolvedNgayLap,
+          tu_ngay: report.tu_ngay || undefined,
+          den_ngay: report.den_ngay || undefined,
+          kinh_gui: report.kinh_gui || undefined,
           kho_khan: report.kho_khan,
           status: report.status,
+          updated_at: report.updated_at,
           user_permission: userPermission
         },
         table1,
@@ -605,7 +657,12 @@ export async function saveReport(req, res) {
 
     // Xác định ID báo cáo theo tài khoản cá nhân: rpt_${currentUserId}_w${week}_${year}
     let targetReportId = metadata.report_id;
-    if (!targetReportId || targetReportId.startsWith('rpt_dept_')) {
+    if (
+      !targetReportId ||
+      targetReportId.startsWith('rpt_dept_') ||
+      String(targetReportId).includes('consolidated') ||
+      !String(targetReportId).includes(`_w${week}_${year}`)
+    ) {
       targetReportId = `rpt_${currentUserId}_w${week}_${year}`;
     }
 
@@ -614,7 +671,7 @@ export async function saveReport(req, res) {
     const editorName = editorAccount ? editorAccount.full_name : currentUserId;
 
     // Kiểm tra xem báo cáo đã tồn tại chưa
-    const existingReport = await db.prepare("SELECT * FROM reports WHERE id = ? OR (account_id = ? AND COALESCE(report_type, 'SINGLE') = 'SINGLE' AND week_number = ? AND year = ?)").get(targetReportId, currentUserId, week, year);
+    const existingReport = await db.prepare("SELECT * FROM reports WHERE (id = ? AND week_number = ? AND year = ?) OR (account_id = ? AND COALESCE(report_type, 'SINGLE') = 'SINGLE' AND week_number = ? AND year = ?)").get(targetReportId, week, year, currentUserId, week, year);
 
     if (existingReport) {
       targetReportId = existingReport.id;
@@ -652,28 +709,56 @@ export async function saveReport(req, res) {
       }
     }
 
+    const cleanNgayLap = normalizeNgayLap(metadata.ngay_lap);
+
     // Atomic transaction for database safety
-    db.exec('BEGIN IMMEDIATE;');
+    await db.exec('BEGIN IMMEDIATE;');
     try {
       if (existingReport) {
         // Update existing report
         await db.prepare(`
           UPDATE reports
-          SET kho_khan = ?, status = ?, created_at = COALESCE(?, created_at), updated_at = CURRENT_TIMESTAMP, last_edited_by = ?
+          SET kho_khan = ?, status = ?, ngay_lap = COALESCE(?, ngay_lap), tu_ngay = COALESCE(?, tu_ngay), den_ngay = COALESCE(?, den_ngay), kinh_gui = COALESCE(?, kinh_gui), updated_at = CURRENT_TIMESTAMP, last_edited_by = ?
           WHERE id = ?
-        `).run(metadata.kho_khan || 'Không', metadata.status || 'DRAFT', metadata.ngay_lap || null, editorName, targetReportId);
+        `).run(
+          metadata.kho_khan || 'Không',
+          metadata.status || 'DRAFT',
+          cleanNgayLap,
+          metadata.tu_ngay || null,
+          metadata.den_ngay || null,
+          metadata.kinh_gui || null,
+          editorName,
+          targetReportId
+        );
 
       } else {
         // Create new report owned by currentUserId
         await db.prepare(`
-          INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, kho_khan, created_at, updated_at, last_edited_by)
-          VALUES (?, ?, ?, ?, ?, ?, 'SINGLE', ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, ?)
+          INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, kho_khan, ngay_lap, tu_ngay, den_ngay, kinh_gui, created_at, updated_at, last_edited_by)
+          VALUES (?, ?, ?, ?, ?, ?, 'SINGLE', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
           ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
             kho_khan = excluded.kho_khan,
             status = excluded.status,
+            ngay_lap = COALESCE(excluded.ngay_lap, reports.ngay_lap),
+            tu_ngay = COALESCE(excluded.tu_ngay, reports.tu_ngay),
+            den_ngay = COALESCE(excluded.den_ngay, reports.den_ngay),
+            kinh_gui = COALESCE(excluded.kinh_gui, reports.kinh_gui),
             updated_at = CURRENT_TIMESTAMP,
             last_edited_by = excluded.last_edited_by
-        `).run(targetReportId, deptId, currentUserId, week, year, metadata.status || 'DRAFT', metadata.kho_khan || 'Không', metadata.ngay_lap || null, editorName);
+        `).run(
+          targetReportId,
+          deptId,
+          currentUserId,
+          week,
+          year,
+          metadata.status || 'DRAFT',
+          metadata.kho_khan || 'Không',
+          cleanNgayLap,
+          metadata.tu_ngay || null,
+          metadata.den_ngay || null,
+          metadata.kinh_gui || null,
+          editorName
+        );
       }
 
       // Replace tasks for targetReportId
@@ -740,10 +825,15 @@ export async function saveReport(req, res) {
         );
       }
 
-      db.exec('COMMIT;');
-      return res.json({ success: true, message: 'Đã lưu báo cáo thành công', report_id: targetReportId });
+      await db.exec('COMMIT;');
+      return res.json({
+        success: true,
+        message: 'Đã lưu báo cáo thành công',
+        report_id: targetReportId,
+        ngay_lap: cleanNgayLap
+      });
     } catch (txErr) {
-      db.exec('ROLLBACK;');
+      await db.exec('ROLLBACK;');
       throw txErr;
     }
   } catch (error) {
@@ -1320,17 +1410,60 @@ export async function getConsolidatedReportDetail(req, res) {
       `).get(department_id || 'dept_vp', targetWeek, targetYear);
     }
 
-    // 4. Nếu vẫn không có, tạo mới Báo cáo tổng hợp riêng cho targetAccId
+    // 4. Nếu vẫn không có trong DB, trả về cấu hình mặc định trên bộ nhớ (KHÔNG tự động INSERT khi mới chỉ XEM báo cáo để tránh làm sai lệch tuần chỉnh sửa gần nhất)
     const masterReportId = masterReport ? masterReport.id : `rpt_consolidated_office_${targetAccId}_w${targetWeek}_${targetYear}`;
+    const defaultDepts = [
+      { name: 'Văn phòng', total: 5, err: 0, pages: 8 },
+      { name: 'Phòng Kế hoạch Tài chính', total: 20, err: 0, pages: 26 },
+      { name: 'Phòng Quản lý Dự án', total: 9, err: 7, pages: 27 },
+      { name: 'Phòng Giám sát Khu liên hợp', total: 2, err: 0, pages: 6 },
+      { name: 'Phòng Giám sát Khối lượng', total: 2, err: 0, pages: 4 },
+      { name: 'Phòng Kiểm tra Môi trường', total: 26, err: 7, pages: 39 }
+    ];
+
+    let userAcc;
+    if (account_id) {
+      userAcc = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
+    }
+    const defaultNguoiLap = userAcc ? userAcc.full_name : '';
+    const defaultEndingNote = 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần ' + targetWeek + ' và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần ' + (targetWeek + 1) + ' của Bộ phận Văn thư – Lưu trữ và Chuyển đổi số. Kính trình Lãnh đạo phòng xem xét./.';
 
     if (!masterReport) {
-      await db.prepare(`
-        INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan)
-        VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', 'Không')
-        ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
-          updated_at = CURRENT_TIMESTAMP
-      `).run(masterReportId, department_id || 'dept_vp', targetAccId, targetWeek, targetYear);
-      masterReport = await db.prepare("SELECT * FROM reports WHERE id = ?").get(masterReportId);
+      return res.json({
+        success: true,
+        data: {
+          metadata: {
+            report_id: masterReportId,
+            tuan: targetWeek,
+            tuan_tiep: targetWeek + 1,
+            nam: targetYear,
+            report_type: 'CONSOLIDATED_OFFICE',
+            kho_khan: 'Không',
+            ngay_lap: normalizeNgayLap(new Date())
+          },
+          table1: [],
+          table2: [],
+          doc_inspection_stats: defaultDepts.map((d, i) => ({
+            id: `ds_${masterReportId}_${i}`,
+            report_id: masterReportId,
+            department_name: d.name,
+            total_checked: d.total,
+            error_count: d.err,
+            total_pages: d.pages || 0,
+            order_index: i + 1
+          })),
+          consolidated_meta: {
+            id: `meta_${masterReportId}`,
+            report_id: masterReportId,
+            to_truong_name: 'Trần Thuận Hòa',
+            nguoi_lap_name: defaultNguoiLap,
+            pho_chanh_van_phong_name: 'Nguyễn Đức Thắng',
+            chanh_van_phong_name: 'Hoàng Văn Dương',
+            ending_note: defaultEndingNote,
+            show_pho_chanh_vp: true
+          }
+        }
+      });
     }
 
     const activeReportId = masterReport.id;
@@ -1338,14 +1471,6 @@ export async function getConsolidatedReportDetail(req, res) {
     // 2. Lấy Mục III (doc_inspection_stats)
     let docStats = await db.prepare('SELECT * FROM doc_inspection_stats WHERE report_id = ? ORDER BY order_index ASC').all(activeReportId);
     if (!docStats || docStats.length === 0) {
-      const defaultDepts = [
-        { name: 'Văn phòng', total: 5, err: 0, pages: 8 },
-        { name: 'Phòng Kế hoạch Tài chính', total: 20, err: 0, pages: 26 },
-        { name: 'Phòng Quản lý Dự án', total: 9, err: 7, pages: 27 },
-        { name: 'Phòng Giám sát Khu liên hợp', total: 2, err: 0, pages: 6 },
-        { name: 'Phòng Giám sát Khối lượng', total: 2, err: 0, pages: 4 },
-        { name: 'Phòng Kiểm tra Môi trường', total: 26, err: 7, pages: 39 }
-      ];
       const stmt = db.prepare('INSERT INTO doc_inspection_stats (id, report_id, department_name, total_checked, error_count, total_pages, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)');
       for (const [i, d] of defaultDepts.entries()) {
         await stmt.run(`ds_${activeReportId}_${i}`, activeReportId, d.name, d.total, d.err, d.pages || 0, i + 1);
@@ -1354,12 +1479,6 @@ export async function getConsolidatedReportDetail(req, res) {
     }
 
     // 3. Lấy Mục IV & 4 Chữ ký (consolidated_report_meta)
-    let userAcc;
-    if (account_id) {
-      userAcc = await db.prepare('SELECT full_name FROM accounts WHERE id = ?').get(account_id);
-    }
-    const defaultNguoiLap = userAcc ? userAcc.full_name : '';
-
     let meta = await db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
     if (!meta) {
       await db.prepare(`
@@ -1369,7 +1488,7 @@ export async function getConsolidatedReportDetail(req, res) {
         `meta_${activeReportId}`,
         activeReportId,
         defaultNguoiLap,
-        'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần ' + targetWeek + ' và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần ' + (targetWeek + 1) + ' của Bộ phận Văn thư – Lưu trữ và Chuyển đổi số. Kính trình Lãnh đạo phòng xem xét./.'
+        defaultEndingNote
       );
       meta = await db.prepare('SELECT * FROM consolidated_report_meta WHERE report_id = ?').get(activeReportId);
     } else if (!meta.nguoi_lap_name || meta.nguoi_lap_name.includes('Nguyễn Thị Mai')) {
@@ -1419,6 +1538,8 @@ export async function getConsolidatedReportDetail(req, res) {
       is_recurring: Boolean(t.is_recurring)
     }));
 
+    const resolvedNgayLap = normalizeNgayLap(masterReport.ngay_lap) || normalizeNgayLap(masterReport.created_at) || normalizeNgayLap(new Date());
+
     return res.json({
       success: true,
       data: {
@@ -1429,7 +1550,10 @@ export async function getConsolidatedReportDetail(req, res) {
           nam: masterReport.year,
           report_type: 'CONSOLIDATED_OFFICE',
           kho_khan: masterReport.kho_khan,
-          ngay_lap: masterReport.created_at
+          ngay_lap: resolvedNgayLap,
+          tu_ngay: masterReport.tu_ngay || undefined,
+          den_ngay: masterReport.den_ngay || undefined,
+          updated_at: masterReport.updated_at
         },
         table1,
         table2,
@@ -1456,33 +1580,59 @@ export async function saveConsolidatedReport(req, res) {
     const week = parseInt(metadata.tuan, 10);
     const year = parseInt(metadata.nam || '2026', 10);
     const accId = metadata.account_id || req.query.account_id || 'acc_vp_hoa';
+    const cleanNgayLap = normalizeNgayLap(metadata.ngay_lap);
 
     let existing = null;
-    if (metadata.report_id) {
-      existing = await db.prepare("SELECT id FROM reports WHERE id = ?").get(metadata.report_id);
+    if (metadata.report_id && String(metadata.report_id).includes('consolidated')) {
+      existing = await db.prepare("SELECT id FROM reports WHERE id = ? AND week_number = ? AND year = ?").get(metadata.report_id, week, year);
     }
     if (!existing) {
       existing = await db.prepare("SELECT id FROM reports WHERE account_id = ? AND report_type = 'CONSOLIDATED_OFFICE' AND week_number = ? AND year = ?").get(accId, week, year);
     }
 
-    const targetReportId = existing ? existing.id : (metadata.report_id || `rpt_consolidated_office_${accId}_w${week}_${year}`);
+    const fallbackReportId = (metadata.report_id && String(metadata.report_id).includes('consolidated') && String(metadata.report_id).includes(`_w${week}_${year}`))
+      ? metadata.report_id
+      : `rpt_consolidated_office_${accId}_w${week}_${year}`;
+    const targetReportId = existing ? existing.id : fallbackReportId;
 
-    db.exec('BEGIN IMMEDIATE;');
+    await db.exec('BEGIN IMMEDIATE;');
     try {
-      // 1. Upsert master report
+      // 1. Upsert master report (Đồng bộ đầy đủ ngay_lap, tu_ngay, den_ngay, created_at, updated_at)
       const deptId = metadata.department_id || 'dept_vp';
 
       if (existing) {
-        await db.prepare('UPDATE reports SET kho_khan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-          .run(metadata.kho_khan || 'Không', targetReportId);
+        await db.prepare(`
+          UPDATE reports
+          SET kho_khan = ?, ngay_lap = COALESCE(?, ngay_lap), tu_ngay = COALESCE(?, tu_ngay), den_ngay = COALESCE(?, den_ngay), updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          metadata.kho_khan || 'Không',
+          cleanNgayLap,
+          metadata.tu_ngay || null,
+          metadata.den_ngay || null,
+          targetReportId
+        );
       } else {
         await db.prepare(`
-          INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan)
-          VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', ?)
+          INSERT INTO reports (id, department_id, account_id, week_number, year, status, report_type, team_code, kho_khan, ngay_lap, tu_ngay, den_ngay, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'DRAFT', 'CONSOLIDATED_OFFICE', 'OFFICE_MASTER', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           ON CONFLICT(account_id, report_type, week_number, year) DO UPDATE SET
             kho_khan = excluded.kho_khan,
+            ngay_lap = COALESCE(excluded.ngay_lap, reports.ngay_lap),
+            tu_ngay = COALESCE(excluded.tu_ngay, reports.tu_ngay),
+            den_ngay = COALESCE(excluded.den_ngay, reports.den_ngay),
             updated_at = CURRENT_TIMESTAMP
-        `).run(targetReportId, deptId, accId, week, year, metadata.kho_khan || 'Không');
+        `).run(
+          targetReportId,
+          deptId,
+          accId,
+          week,
+          year,
+          metadata.kho_khan || 'Không',
+          cleanNgayLap,
+          metadata.tu_ngay || null,
+          metadata.den_ngay || null
+        );
       }
 
       // 2. Upsert consolidated meta
@@ -1597,16 +1747,17 @@ export async function saveConsolidatedReport(req, res) {
         });
       }
 
-      db.exec('COMMIT;');
+      await db.exec('COMMIT;');
       return res.json({
         success: true,
         message: 'Đã lưu Báo cáo tuần tổng hợp Văn phòng thành công!',
         report_id: targetReportId,
+        ngay_lap: cleanNgayLap,
         table1: savedTable1,
         table2: savedTable2
       });
     } catch (txErr) {
-      db.exec('ROLLBACK;');
+      await db.exec('ROLLBACK;');
       throw txErr;
     }
   } catch (error) {

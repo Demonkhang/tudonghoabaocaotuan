@@ -31,7 +31,8 @@ import {
   TaskTable2,
   ReportMetadata,
   validateReport,
-  toInputDate
+  toInputDate,
+  getWeekDates
 } from './utils/reportUtils';
 import { exportWordReport, fetchReportDetail, saveReportData, triggerCarryOver, fetchReportHistory, fetchSyncedDirectiveTasks, fetchConsolidatedReportDetail, saveConsolidatedReportData, exportConsolidatedWordReport } from './services/api';
 import { parseExcelFile, downloadExcelTemplate } from './utils/excelParser';
@@ -234,7 +235,7 @@ export default function App() {
     }
   }, []);
 
-  // Tự động tìm báo cáo mới nhất hoặc báo cáo đang làm dở từ localStorage khi ứng dụng khởi động hoặc reload (F5)
+  // Tự động tìm báo cáo mới nhất (tuần vừa tiến hành chỉnh sửa gần nhất) từ CSDL & localStorage khi ứng dụng khởi động hoặc reload (F5)
   useEffect(() => {
     if (!currentUser) return;
 
@@ -242,12 +243,37 @@ export default function App() {
       setIsLoading(true);
       try {
         const userKey = currentUser.id;
-        const lastSavedType = localStorage.getItem(`lastReportType_${userKey}`);
-        const lastActiveWeek = localStorage.getItem(`lastActiveWeek_${userKey}`);
-        const lastActiveYear = localStorage.getItem(`lastActiveYear_${userKey}`);
+        const lastEditedType = localStorage.getItem(`lastEditedReportType_${userKey}`) || localStorage.getItem(`lastReportType_${userKey}`);
+        const lastEditedWeekStr = localStorage.getItem(`lastEditedWeek_${userKey}`);
+        const lastEditedYearStr = localStorage.getItem(`lastEditedYear_${userKey}`);
 
-        const targetWeek = lastActiveWeek ? parseInt(lastActiveWeek, 10) : metadata.tuan;
-        const targetYear = lastActiveYear ? parseInt(lastActiveYear, 10) : metadata.nam;
+        let targetWeek = lastEditedWeekStr ? parseInt(lastEditedWeekStr, 10) : metadata.tuan;
+        let targetYear = lastEditedYearStr ? parseInt(lastEditedYearStr, 10) : metadata.nam;
+        let targetType = lastEditedType || 'SINGLE';
+
+        // Truy vấn lịch sử báo cáo từ CSDL (đã sắp xếp theo updated_at DESC - tuần vừa chỉnh sửa gần nhất đứng đầu)
+        try {
+          const histRes = await fetchReportHistory(currentUser.department_id, currentUser.id);
+          if (histRes && histRes.success && Array.isArray(histRes.reports) && histRes.reports.length > 0) {
+            // Ưu tiên báo cáo thực sự có nhiệm vụ hoặc đã được lưu (có ngay_lap), loại bỏ dòng rỗng tự sinh trước đây
+            const validReports = histRes.reports.filter((r: any) =>
+              ((r.total_t1 || 0) + (r.total_t2 || 0) > 0) || Boolean(r.ngay_lap)
+            );
+            const mostRecentReport = validReports.length > 0 ? validReports[0] : histRes.reports[0];
+
+            if (mostRecentReport && mostRecentReport.week_number && mostRecentReport.year) {
+              targetWeek = Number(mostRecentReport.week_number);
+              targetYear = Number(mostRecentReport.year);
+              targetType = String(mostRecentReport.id || '').includes('consolidated') ? 'CONSOLIDATED_OFFICE' : 'SINGLE';
+
+              localStorage.setItem(`lastEditedWeek_${userKey}`, String(targetWeek));
+              localStorage.setItem(`lastEditedYear_${userKey}`, String(targetYear));
+              localStorage.setItem(`lastEditedReportType_${userKey}`, targetType);
+            }
+          }
+        } catch (dbErr) {
+          console.warn('Không thể lấy lịch sử báo cáo mới nhất từ CSDL, dùng localStorage:', dbErr);
+        }
 
         setMetadata(prev => ({
           ...prev,
@@ -255,9 +281,10 @@ export default function App() {
           tuan_tiep: targetWeek + 1,
           nam: targetYear
         }));
+        // Thể hiện tuần mới nhất luôn là tuần vừa tiến hành chỉnh sửa gần nhất
         setRecentlyCreatedWeek(targetWeek);
 
-        if (lastSavedType === 'CONSOLIDATED_OFFICE') {
+        if (targetType === 'CONSOLIDATED_OFFICE') {
           await loadConsolidatedReport(targetWeek, targetYear);
         } else {
           const personalReportId = `rpt_${userKey}_w${targetWeek}_${targetYear}`;
@@ -365,9 +392,17 @@ export default function App() {
       const loadedNguoiLap = meta.nguoi_lap;
       const isOldDefault = !loadedNguoiLap || loadedNguoiLap.includes('Nguyễn Thị Mai') || loadedNguoiLap === 'Chưa đăng nhập';
       const finalNguoiLap = isOldDefault ? (currentUser?.full_name || meta.nguoi_lap) : meta.nguoi_lap;
+      const weekDates = getWeekDates(week, year);
 
       setMetadata(prev => ({
+        ...prev,
         ...meta,
+        tuan: week,
+        tuan_tiep: week + 1,
+        nam: year,
+        tu_ngay: meta.tu_ngay || weekDates.tu_ngay,
+        den_ngay: meta.den_ngay || weekDates.den_ngay,
+        ngay_lap: toInputDate(meta.ngay_lap),
         don_vi: meta.don_vi || currentUser?.department_name,
         nguoi_lap: finalNguoiLap
       }));
@@ -397,6 +432,7 @@ export default function App() {
         setHasPromptedChoiceSet(prev => new Set(prev).add(key));
       }
     } else {
+      const weekDates = getWeekDates(week, year);
       setUserPermission('OWNER');
       setMetadata(prev => ({
         ...prev,
@@ -404,6 +440,9 @@ export default function App() {
         tuan: week,
         tuan_tiep: week + 1,
         nam: year,
+        tu_ngay: weekDates.tu_ngay,
+        den_ngay: weekDates.den_ngay,
+        ngay_lap: toInputDate(),
         don_vi: currentUser?.department_name || prev.don_vi,
         nguoi_lap: currentUser?.full_name || prev.nguoi_lap
       }));
@@ -530,6 +569,7 @@ export default function App() {
       const data = res.data;
       const rawNguoiLap = data.consolidated_meta?.nguoi_lap_name || data.metadata?.nguoi_lap;
       const finalNguoiLap = currentUser?.full_name || rawNguoiLap || metadata.nguoi_lap || '';
+      const weekDates = getWeekDates(week, year);
 
       setMetadata(prev => ({
         ...prev,
@@ -537,6 +577,9 @@ export default function App() {
         tuan: week,
         tuan_tiep: week + 1,
         nam: year,
+        tu_ngay: data.metadata?.tu_ngay || weekDates.tu_ngay,
+        den_ngay: data.metadata?.den_ngay || weekDates.den_ngay,
+        ngay_lap: toInputDate(data.metadata?.ngay_lap),
         don_vi: 'VĂN PHÒNG',
         nguoi_lap: finalNguoiLap
       }));
@@ -615,6 +658,9 @@ export default function App() {
       const nextW = res.target_week;
       const nextY = res.target_year;
       setRecentlyCreatedWeek(nextW);
+      localStorage.setItem(`lastEditedWeek_${currentUser.id}`, String(nextW));
+      localStorage.setItem(`lastEditedYear_${currentUser.id}`, String(nextY));
+      localStorage.setItem(`lastEditedReportType_${currentUser.id}`, reportType);
       setMetadata(prev => ({
         ...prev,
         tuan: nextW,
@@ -645,6 +691,11 @@ export default function App() {
     try {
       const parsed = await parseExcelFile(file);
       setRecentlyCreatedWeek(metadata.tuan);
+      if (currentUser?.id) {
+        localStorage.setItem(`lastEditedWeek_${currentUser.id}`, String(metadata.tuan));
+        localStorage.setItem(`lastEditedYear_${currentUser.id}`, String(metadata.nam));
+        localStorage.setItem(`lastEditedReportType_${currentUser.id}`, reportType);
+      }
       setTable1(parsed.table1);
       setTable2(parsed.table2);
 
@@ -914,9 +965,12 @@ export default function App() {
         doc_inspection_stats: docInspectionStats,
         consolidated_meta: consolidatedMeta
       });
-      localStorage.setItem('lastReportType', 'CONSOLIDATED_OFFICE');
-      localStorage.setItem('lastActiveWeek', String(targetWeek));
-      localStorage.setItem('lastActiveYear', String(targetYear));
+      localStorage.setItem(`lastReportType_${currentUser.id}`, 'CONSOLIDATED_OFFICE');
+      localStorage.setItem(`lastEditedReportType_${currentUser.id}`, 'CONSOLIDATED_OFFICE');
+      localStorage.setItem(`lastEditedWeek_${currentUser.id}`, String(targetWeek));
+      localStorage.setItem(`lastEditedYear_${currentUser.id}`, String(targetYear));
+      localStorage.setItem(`lastActiveWeek_${currentUser.id}`, String(targetWeek));
+      localStorage.setItem(`lastActiveYear_${currentUser.id}`, String(targetYear));
     } else {
       await saveReportData({
         metadata: {
@@ -927,9 +981,12 @@ export default function App() {
         table1: newTable1,
         table2: newTable2
       });
-      localStorage.setItem('lastReportType', 'SINGLE');
-      localStorage.setItem('lastActiveWeek', String(targetWeek));
-      localStorage.setItem('lastActiveYear', String(targetYear));
+      localStorage.setItem(`lastReportType_${currentUser.id}`, 'SINGLE');
+      localStorage.setItem(`lastEditedReportType_${currentUser.id}`, 'SINGLE');
+      localStorage.setItem(`lastEditedWeek_${currentUser.id}`, String(targetWeek));
+      localStorage.setItem(`lastEditedYear_${currentUser.id}`, String(targetYear));
+      localStorage.setItem(`lastActiveWeek_${currentUser.id}`, String(targetWeek));
+      localStorage.setItem(`lastActiveYear_${currentUser.id}`, String(targetYear));
     }
 
     setIsLoading(false);
@@ -942,11 +999,12 @@ export default function App() {
     setIsLoading(true);
 
     if (reportType === 'CONSOLIDATED_OFFICE') {
-      const masterReportId = metadata.report_id || (currentUser?.id ? `rpt_consolidated_office_${currentUser.id}_w${metadata.tuan}_${metadata.nam}` : `rpt_consolidated_office_w${metadata.tuan}_${metadata.nam}`);
+      const masterReportId = `rpt_consolidated_office_${currentUser.id}_w${metadata.tuan}_${metadata.nam}`;
       const res = await saveConsolidatedReportData({
         metadata: {
           ...metadata,
           report_id: masterReportId,
+          ngay_lap: toInputDate(metadata.ngay_lap),
           department_id: currentUser.department_id,
           account_id: currentUser.id
         },
@@ -958,7 +1016,16 @@ export default function App() {
       setIsLoading(false);
       if (res && res.success) {
         const finalReportId = res.report_id || masterReportId;
-        setMetadata(prev => ({ ...prev, report_id: finalReportId }));
+        const savedNgayLap = toInputDate(res.ngay_lap || metadata.ngay_lap);
+        const nowStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+        setSyncedAt(nowStr);
+        // Thể hiện tuần mới nhất luôn là tuần vừa tiến hành chỉnh sửa gần nhất
+        setRecentlyCreatedWeek(metadata.tuan);
+        setMetadata(prev => ({
+          ...prev,
+          report_id: finalReportId,
+          ngay_lap: savedNgayLap
+        }));
         if (res.table1) setTable1(res.table1);
         if (res.table2) setTable2(res.table2);
         setInitialSnapshot({
@@ -967,9 +1034,12 @@ export default function App() {
         });
         setLastSaveUpdatedAt(new Date().toISOString());
         setHasLoadedData(true);
-        localStorage.setItem('lastReportType', 'CONSOLIDATED_OFFICE');
-        localStorage.setItem('lastActiveWeek', String(metadata.tuan));
-        localStorage.setItem('lastActiveYear', String(metadata.nam));
+        localStorage.setItem(`lastReportType_${currentUser.id}`, 'CONSOLIDATED_OFFICE');
+        localStorage.setItem(`lastEditedReportType_${currentUser.id}`, 'CONSOLIDATED_OFFICE');
+        localStorage.setItem(`lastEditedWeek_${currentUser.id}`, String(metadata.tuan));
+        localStorage.setItem(`lastEditedYear_${currentUser.id}`, String(metadata.nam));
+        localStorage.setItem(`lastActiveWeek_${currentUser.id}`, String(metadata.tuan));
+        localStorage.setItem(`lastActiveYear_${currentUser.id}`, String(metadata.nam));
         showToast('🎉 Đã lưu thành công Báo cáo tuần tổng hợp Văn phòng (Nghị định 30)!');
       } else {
         alert('Lỗi khi lưu Báo cáo tổng hợp: ' + (res?.error || 'Không thể lưu'));
@@ -977,12 +1047,13 @@ export default function App() {
       return;
     }
 
-    const targetReportId = metadata.report_id || `rpt_${currentUser.id}_w${metadata.tuan}_${metadata.nam}`;
+    const targetReportId = `rpt_${currentUser.id}_w${metadata.tuan}_${metadata.nam}`;
 
     const payload = {
       metadata: {
         ...metadata,
         report_id: targetReportId,
+        ngay_lap: toInputDate(metadata.ngay_lap),
         department_id: currentUser.department_id,
         account_id: currentUser.id,
         tuan: metadata.tuan,
@@ -1012,15 +1083,27 @@ export default function App() {
 
     if (res && res.success) {
       const nowStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const savedNgayLap = toInputDate(res.ngay_lap || metadata.ngay_lap);
       setSyncedAt(nowStr);
+      // Thể hiện tuần mới nhất luôn là tuần vừa tiến hành chỉnh sửa gần nhất
       setRecentlyCreatedWeek(metadata.tuan);
-      setMetadata(prev => ({ ...prev, report_id: targetReportId }));
+      setMetadata(prev => ({
+        ...prev,
+        report_id: targetReportId,
+        ngay_lap: savedNgayLap
+      }));
       setLastSaveUpdatedAt(new Date().toISOString());
       setInitialSnapshot({
         table1: JSON.parse(JSON.stringify(table1)),
         table2: JSON.parse(JSON.stringify(table2))
       });
       setHasLoadedData(true);
+      localStorage.setItem(`lastReportType_${currentUser.id}`, 'SINGLE');
+      localStorage.setItem(`lastEditedReportType_${currentUser.id}`, 'SINGLE');
+      localStorage.setItem(`lastEditedWeek_${currentUser.id}`, String(metadata.tuan));
+      localStorage.setItem(`lastEditedYear_${currentUser.id}`, String(metadata.nam));
+      localStorage.setItem(`lastActiveWeek_${currentUser.id}`, String(metadata.tuan));
+      localStorage.setItem(`lastActiveYear_${currentUser.id}`, String(metadata.nam));
       showToast(`💾 Đã lưu thành công Báo cáo Tuần ${metadata.tuan}/${metadata.nam} (${table1.length + table2.length} nhiệm vụ) vào CSDL!`);
     } else {
       alert("Lỗi khi lưu báo cáo: " + (res.error || "Không thể kết nối máy chủ CSDL"));

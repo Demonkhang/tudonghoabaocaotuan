@@ -116,6 +116,21 @@ if (activeMode === 'neon') {
       sqliteDb.exec("ALTER TABLE consolidated_report_meta ADD COLUMN show_pho_chanh_vp SMALLINT DEFAULT 1;");
       console.log("✅ [DB SQLite] Đã tự động thêm cột 'show_pho_chanh_vp' vào bảng consolidated_report_meta");
     }
+    const reportsInfo = sqliteDb.prepare("PRAGMA table_info(reports);").all();
+    if (reportsInfo.length > 0) {
+      if (!reportsInfo.some((col) => col.name === 'ngay_lap')) {
+        sqliteDb.exec("ALTER TABLE reports ADD COLUMN ngay_lap TEXT;");
+      }
+      if (!reportsInfo.some((col) => col.name === 'tu_ngay')) {
+        sqliteDb.exec("ALTER TABLE reports ADD COLUMN tu_ngay TEXT;");
+      }
+      if (!reportsInfo.some((col) => col.name === 'den_ngay')) {
+        sqliteDb.exec("ALTER TABLE reports ADD COLUMN den_ngay TEXT;");
+      }
+      if (!reportsInfo.some((col) => col.name === 'kinh_gui')) {
+        sqliteDb.exec("ALTER TABLE reports ADD COLUMN kinh_gui TEXT;");
+      }
+    }
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS monthly_reports (
         id TEXT PRIMARY KEY,
@@ -141,11 +156,16 @@ if (activeMode === 'neon') {
 }
 
 // Neon auto migration if needed
+let neonMigrationPromise = Promise.resolve();
 if (activeMode === 'neon' && neonClient) {
-  Promise.allSettled([
+  neonMigrationPromise = Promise.allSettled([
     neonClient`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_pinned SMALLINT DEFAULT 0;`,
     neonClient`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS team_code VARCHAR(30) DEFAULT 'VAN_THU';`,
     neonClient`ALTER TABLE standalone_tasks ADD COLUMN IF NOT EXISTS is_pool_hidden SMALLINT DEFAULT 0;`,
+    neonClient`ALTER TABLE reports ADD COLUMN IF NOT EXISTS ngay_lap TEXT;`,
+    neonClient`ALTER TABLE reports ADD COLUMN IF NOT EXISTS tu_ngay TEXT;`,
+    neonClient`ALTER TABLE reports ADD COLUMN IF NOT EXISTS den_ngay TEXT;`,
+    neonClient`ALTER TABLE reports ADD COLUMN IF NOT EXISTS kinh_gui TEXT;`,
     neonClient`ALTER TABLE consolidated_report_meta ADD COLUMN IF NOT EXISTS ending_note TEXT DEFAULT 'Trên đây là báo cáo tình hình thực hiện nhiệm vụ Tuần và kế hoạch thực hiện nhiệm vụ trọng tâm công tác Tuần tiếp theo. Kính trình Lãnh đạo phòng xem xét./.';`,
     neonClient`ALTER TABLE consolidated_report_meta ADD COLUMN IF NOT EXISTS show_pho_chanh_vp SMALLINT DEFAULT 1;`,
     neonClient`CREATE TABLE IF NOT EXISTS doc_inspection_stats (
@@ -174,7 +194,7 @@ if (activeMode === 'neon' && neonClient) {
       UNIQUE(account_id, month, year)
     );`
   ])
-    .then(() => console.log("✅ [DB Neon] Đã đảm bảo toàn bộ schema (ending_note, team_code, is_pool_hidden, doc_inspection_stats) sẵn sàng"))
+    .then(() => console.log("✅ [DB Neon] Đã đảm bảo toàn bộ schema (ngay_lap, ending_note, team_code, is_pool_hidden, doc_inspection_stats) sẵn sàng"))
     .catch(err => console.warn("⚠️ [DB Neon] Schema auto migration:", err.message));
 }
 
@@ -184,15 +204,18 @@ export const db = {
       const converted = convertSql(query);
       return {
         async all(...params) {
+          await neonMigrationPromise;
           const flattened = params.flat();
           return await neonClient.query(converted, flattened);
         },
         async get(...params) {
+          await neonMigrationPromise;
           const flattened = params.flat();
           const rows = await neonClient.query(converted, flattened);
           return rows && rows.length > 0 ? rows[0] : null;
         },
         async run(...params) {
+          await neonMigrationPromise;
           const flattened = params.flat();
           const res = await neonClient.query(converted, flattened);
           return { changes: Array.isArray(res) ? res.length : 1 };
@@ -223,6 +246,16 @@ export const db = {
   },
   async exec(query) {
     if (activeMode === 'neon') {
+      const trimmed = String(query || '').trim().toUpperCase();
+      if (
+        trimmed.startsWith('BEGIN') ||
+        trimmed.startsWith('COMMIT') ||
+        trimmed.startsWith('ROLLBACK') ||
+        trimmed.startsWith('PRAGMA')
+      ) {
+        return;
+      }
+      await neonMigrationPromise;
       return await neonClient.query(query);
     } else {
       return sqliteDb.exec(query);

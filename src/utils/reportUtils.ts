@@ -319,8 +319,8 @@ export function validateReport(table1: TaskTable1[], table2: TaskTable2[]): Vali
 /**
  * Chuyển đổi chuỗi ngày bất kỳ sang định dạng HTML input date (YYYY-MM-DD)
  */
-export function toInputDate(rawDate?: string): string {
-  if (!rawDate || !rawDate.trim()) {
+export function toInputDate(rawDate?: any): string {
+  if (!rawDate) {
     const today = new Date();
     const y = today.getFullYear();
     const m = String(today.getMonth() + 1).padStart(2, '0');
@@ -328,10 +328,17 @@ export function toInputDate(rawDate?: string): string {
     return `${y}-${m}-${d}`;
   }
 
-  const val = rawDate.trim();
+  const val = String(rawDate).trim();
+  if (!val) {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
 
   // Tách lấy phần ngày trước khoảng trắng hoặc chữ 'T' (Ví dụ: "2026-09-17 08:53:51" -> "2026-09-17")
-  let cleanVal = val.split(' ')[0].split('T')[0];
+  const cleanVal = val.split(' ')[0].split('T')[0];
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(cleanVal)) {
     return cleanVal;
@@ -340,6 +347,14 @@ export function toInputDate(rawDate?: string): string {
   if (cleanVal.includes('/')) {
     const parts = cleanVal.split('/');
     if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        // YYYY/MM/DD
+        const y = parts[0];
+        const m = parts[1].padStart(2, '0');
+        const d = parts[2].padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+      // DD/MM/YYYY
       const d = parts[0].padStart(2, '0');
       const m = parts[1].padStart(2, '0');
       const y = parts[2];
@@ -347,6 +362,14 @@ export function toInputDate(rawDate?: string): string {
         return `${y}-${m}-${d}`;
       }
     }
+  }
+
+  const parsed = new Date(val);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   const today = new Date();
